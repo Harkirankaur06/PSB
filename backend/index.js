@@ -6,6 +6,7 @@ const transactionRoutes = require("./routes/transaction.routes");
 const riskRoutes = require("./routes/risk.routes");
 const goalRoutes = require("./routes/goal.routes");
 const activityLogger = require("./middleware/activity.middleware");
+const sercuirtyroutes=require("./routes/security.routes");
 
 
 
@@ -20,6 +21,7 @@ app.use("/api/financial", financialRoutes);
 app.use("/api/transaction", transactionRoutes);
 app.use("/api/risk", riskRoutes);
 app.use("/api/goals", goalRoutes);
+app.use("/api/security",sercuirtyroutes);
 
 
 require("./jobs/transaction.worker");
