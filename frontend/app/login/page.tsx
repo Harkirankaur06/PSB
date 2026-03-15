@@ -21,16 +21,36 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
 
-    // Mock authentication - in production this would call an API
-    if (email && password && password.length >= 8) {
-      setTimeout(() => {
-        router.push('/onboarding');
-        setLoading(false);
-      }, 600);
-    } else {
-      setError('Please check your credentials');
-      setLoading(false);
+    try {
+      const res = await fetch("http://localhost:5000/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          email,
+          password
+        })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || "Login failed");
+      }
+
+      // Save token
+      localStorage.setItem("accessToken", data.accessToken);
+      localStorage.setItem("refreshToken", data.refreshToken);
+
+      // Redirect after login
+      router.push('/onboarding');
+
+    } catch (err: any) {
+      setError(err.message || "Something went wrong");
     }
+
+    setLoading(false);
   };
 
   return (
