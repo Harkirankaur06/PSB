@@ -51,7 +51,9 @@ export default function ProtectionPage() {
           }
         );
 
-        const data = await res.json();
+        const text = await res.text();
+        console.log(text);
+        const data = JSON.parse(text);
 
         setProtectionData(data.policies || []);
 

@@ -35,7 +35,7 @@ export default function SecurityPage() {
         const token = localStorage.getItem("accessToken");
 
         const res = await fetch(
-          "http://localhost:5000/api/transactions/history",
+          "http://localhost:5000/api/transaction/history",
           {
             headers: {
               Authorization: `Bearer ${token}`
@@ -43,7 +43,9 @@ export default function SecurityPage() {
           }
         );
 
-        const data = await res.json();
+        const text = await res.text();
+        console.log(text);
+        const data = JSON.parse(text);
 
         const events = data.map((tx:any) => ({
           title: tx.type || "Transaction",

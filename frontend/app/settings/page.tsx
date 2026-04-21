@@ -11,7 +11,6 @@ import {
   Eye,
   LogOut,
   ChevronRight,
-  Toggle,
 } from 'lucide-react';
 
 export default function SettingsPage() {

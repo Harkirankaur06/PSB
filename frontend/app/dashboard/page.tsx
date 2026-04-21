@@ -52,8 +52,10 @@ export default function DashboardPage() {
           }
         );
 
-        const data = await res.json();
+        const text = await res.text();
+        console.log(text);
 
+        const data = JSON.parse(text);  
         setDashboardData(data);
       } catch (err) {
         console.error("Dashboard fetch error", err);

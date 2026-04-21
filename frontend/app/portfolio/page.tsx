@@ -44,7 +44,7 @@ export default function PortfolioPage() {
         );
 
         const transactionRes = await fetch(
-          "http://localhost:5000/api/transactions/history",
+          "http://localhost:5000/api/transaction/history",
           {
             headers: { Authorization: `Bearer ${token}` }
           }

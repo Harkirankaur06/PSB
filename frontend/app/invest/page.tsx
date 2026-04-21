@@ -99,7 +99,7 @@ export default function InvestPage() {
         const token = localStorage.getItem("accessToken");
 
         const res = await fetch(
-          "http://localhost:5000/api/transactions/history",
+          "http://localhost:5000/api/transaction/history",
           {
             headers: {
               Authorization: `Bearer ${token}`
@@ -107,7 +107,9 @@ export default function InvestPage() {
           }
         );
 
-        const data = await res.json();
+        const text = await res.text();
+        console.log(text);
+        const data = JSON.parse(text);
 
         setOpportunities(data);
 

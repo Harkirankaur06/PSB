@@ -37,7 +37,9 @@ export default function GoalsPage() {
         }
       );
 
-      const data = await res.json();
+      const text = await res.text();
+      console.log(text);
+      const data = JSON.parse(text);
       setGoalsData(data);
 
     } catch (err) {

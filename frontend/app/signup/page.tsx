@@ -72,15 +72,17 @@ export default function SignupPage() {
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            firstName: formData.firstName,
-            lastName: formData.lastName,
+            name: `${formData.firstName} ${formData.lastName}`,
             email: formData.email,
             password: formData.password
           })
         }
       );
 
-      const data = await res.json();
+      const text = await res.text();
+      console.log(text);
+
+      const data = JSON.parse(text);
 
       if (!res.ok) {
         throw new Error(data.message || "Signup failed");

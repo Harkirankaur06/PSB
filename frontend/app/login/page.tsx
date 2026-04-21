@@ -33,7 +33,9 @@ export default function LoginPage() {
         })
       });
 
-      const data = await res.json();
+      const text = await res.text();
+      console.log(text);
+      const data = JSON.parse(text);
 
       if (!res.ok) {
         throw new Error(data.message || "Login failed");
