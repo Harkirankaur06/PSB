@@ -193,13 +193,28 @@ export default function PortfolioPage() {
           fetch(`${API_BASE_URL}/api/ai/insights`, { headers }),
         ]);
 
-        if (!dashboardRes.ok || !transactionRes.ok || !aiRes.ok) {
-          throw new Error('Unable to load portfolio data from the server.');
+        if (!dashboardRes.ok || !transactionRes.ok) {
+          const failures = [
+            !dashboardRes.ok ? `dashboard ${dashboardRes.status}` : null,
+            !transactionRes.ok ? `transactions ${transactionRes.status}` : null,
+          ]
+            .filter(Boolean)
+            .join(', ');
+
+          throw new Error(`Unable to load portfolio data from the server (${failures}).`);
         }
 
         const dashboardData: DashboardResponse = await dashboardRes.json();
         const transactionData: Transaction[] = await transactionRes.json();
-        const aiData: AIInsightsResponse = await aiRes.json();
+        let aiData: AIInsightsResponse | null = null;
+
+        if (aiRes.ok) {
+          aiData = await aiRes.json();
+        } else {
+          console.warn('AI insights unavailable for portfolio page', {
+            status: aiRes.status,
+          });
+        }
 
         setDashboard(dashboardData);
         setAiInsights(aiData);
