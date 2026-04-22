@@ -75,4 +75,10 @@ async function getTransactionHistory(userId) {
     .sort({ createdAt: -1 });
 }
 
+async function getTransactionHistory(userId, limit = null) {
+  const query = Transaction.find({ userId }).sort({ createdAt: -1 });
+  if (limit) query.limit(limit);
+  return await query;
+}
+
 module.exports = { processTransaction ,getTransactionHistory};

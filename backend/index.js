@@ -9,6 +9,7 @@ const riskRoutes = require("./routes/risk.routes");
 const goalRoutes = require("./routes/goal.routes");
 const securityRoutes = require("./routes/security.routes");
 const aiRoutes = require("./routes/ai.routes");
+const dashboardRoutes = require("./routes/dashboard.routes");
 
 const activityLogger = require("./middleware/activity.middleware");
 
@@ -29,6 +30,7 @@ app.use("/api/risk", riskRoutes);
 app.use("/api/goals", goalRoutes);
 app.use("/api/security", securityRoutes);
 app.use("/api/ai", aiRoutes);
+app.use("/api/dashboard", dashboardRoutes);
 
 //require("./jobs/transaction.worker");
 
