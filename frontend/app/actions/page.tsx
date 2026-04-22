@@ -50,7 +50,7 @@ export default function ActionCenterPage() {
         const token = localStorage.getItem("accessToken");
 
         const dashboardRes = await fetch(
-          "http://https://psb-backend.onrender.com/api/risk/dashboard",
+          "https://psb-backend.onrender.com/api/risk/dashboard",
           {
             headers: {
               Authorization: `Bearer ${token}`
@@ -59,7 +59,7 @@ export default function ActionCenterPage() {
         );
 
         const goalsRes = await fetch(
-          "http://https://psb-backend.onrender.com/api/goals",
+          "https://psb-backend.onrender.com/api/goals",
           {
             headers: {
               Authorization: `Bearer ${token}`

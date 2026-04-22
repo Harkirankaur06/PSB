@@ -29,7 +29,7 @@ export default function GoalsPage() {
       const token = localStorage.getItem("accessToken");
 
       const res = await fetch(
-        "http://https://psb-backend.onrender.com/api/goals",
+        "https://psb-backend.onrender.com/api/goals",
         {
           headers: {
             Authorization: `Bearer ${token}`
@@ -63,7 +63,7 @@ export default function GoalsPage() {
       const token = localStorage.getItem("accessToken");
 
       await fetch(
-        `http://https://psb-backend.onrender.com/api/goals/${id}`,
+        `https://psb-backend.onrender.com/api/goals/${id}`,
         {
           method: "DELETE",
           headers: {

@@ -29,7 +29,7 @@ export default function OnboardingPage() {
       const token = localStorage.getItem("accessToken");
 
       await fetch(
-        "http://https://psb-backend.onrender.com/api/security/enable-biometric",
+        "https://psb-backend.onrender.com/api/security/enable-biometric",
         {
           method: "POST",
           headers: {
@@ -67,7 +67,7 @@ export default function OnboardingPage() {
       const token = localStorage.getItem("accessToken");
 
       await fetch(
-        "http://https://psb-backend.onrender.com/api/security/create-pin",
+        "https://psb-backend.onrender.com/api/security/create-pin",
         {
           method: "POST",
           headers: {

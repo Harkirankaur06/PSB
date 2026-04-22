@@ -37,14 +37,14 @@ export default function PortfolioPage() {
         const token = localStorage.getItem("accessToken");
 
         const dashboardRes = await fetch(
-          "http://https://psb-backend.onrender.com/api/risk/dashboard",
+          "https://psb-backend.onrender.com/api/risk/dashboard",
           {
             headers: { Authorization: `Bearer ${token}` }
           }
         );
 
         const transactionRes = await fetch(
-          "http://https://psb-backend.onrender.com/api/transaction/history",
+          "https://psb-backend.onrender.com/api/transaction/history",
           {
             headers: { Authorization: `Bearer ${token}` }
           }

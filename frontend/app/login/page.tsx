@@ -22,7 +22,7 @@ export default function LoginPage() {
     setError('');
 
     try {
-      const res = await fetch("http://https://psb-backend.onrender.com/api/auth/login", {
+      const res = await fetch("https://psb-backend.onrender.com/api/auth/login", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"

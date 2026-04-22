@@ -43,7 +43,7 @@ export default function ProtectionPage() {
         const token = localStorage.getItem("accessToken");
 
         const res = await fetch(
-          "http://https://psb-backend.onrender.com/api/financial",
+          "https://psb-backend.onrender.com/api/financial",
           {
             headers: {
               Authorization: `Bearer ${token}`
