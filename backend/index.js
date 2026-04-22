@@ -28,7 +28,7 @@ app.use("/api/risk", riskRoutes);
 app.use("/api/goals", goalRoutes);
 app.use("/api/security", securityRoutes);
 
-require("./jobs/transaction.worker");
+//require("./jobs/transaction.worker");
 
 const PORT = process.env.PORT || 5000;
 
