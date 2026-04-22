@@ -99,7 +99,7 @@ export default function InvestPage() {
         const token = localStorage.getItem("accessToken");
 
         const res = await fetch(
-          "http://https://psb-backend.onrender.com/api/transaction/history",
+          "https://psb-backend.onrender.com/api/transaction/history",
           {
             headers: {
               Authorization: `Bearer ${token}`
