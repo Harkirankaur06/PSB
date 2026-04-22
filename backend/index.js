@@ -8,6 +8,7 @@ const transactionRoutes = require("./routes/transaction.routes");
 const riskRoutes = require("./routes/risk.routes");
 const goalRoutes = require("./routes/goal.routes");
 const securityRoutes = require("./routes/security.routes");
+const aiRoutes = require("./routes/ai.routes");
 
 const activityLogger = require("./middleware/activity.middleware");
 
@@ -27,6 +28,7 @@ app.use("/api/transaction", transactionRoutes);
 app.use("/api/risk", riskRoutes);
 app.use("/api/goals", goalRoutes);
 app.use("/api/security", securityRoutes);
+app.use("/api/ai", aiRoutes);
 
 //require("./jobs/transaction.worker");
 
