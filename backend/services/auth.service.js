@@ -2,6 +2,7 @@ const bcrypt = require("bcryptjs");
 const { v4: uuidv4 } = require("uuid");
 const User = require("../models/User");
 const Session = require("../models/Session");
+const { startSession } = require("../modules/cyber/sessionTracker");
 
 const {
   generateAccessToken,
@@ -32,8 +33,11 @@ async function signup(data, deviceName) {
     userId: user._id,
     refreshToken,
     deviceId,
+    lastActivityAt: new Date(),
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
   });
+
+  startSession(String(user._id));
 
   return { user, accessToken, refreshToken, deviceId };
 }
@@ -64,8 +68,11 @@ async function login(data, deviceName) {
     userId: user._id,
     refreshToken,
     deviceId,
+    lastActivityAt: new Date(),
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
   });
+
+  startSession(String(user._id));
 
   return { user, accessToken, refreshToken, deviceId };
 }
@@ -87,6 +94,7 @@ async function refreshToken(oldRefreshToken) {
   const newRefreshToken = generateRefreshToken(user);
 
   session.refreshToken = newRefreshToken;
+  session.lastActivityAt = new Date();
   await session.save();
 
   return { newAccessToken, newRefreshToken };

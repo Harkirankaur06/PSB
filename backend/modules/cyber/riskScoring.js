@@ -1,5 +1,3 @@
-// riskScoring.js
-
 const signalScores = {
   NEW_DEVICE: 25,
   LARGE_TRANSACTION: 30,
@@ -11,19 +9,20 @@ const signalScores = {
   TRANSACTION_VELOCITY: 20,
   NEW_BENEFICIARY: 20,
   LOCATION_CHANGE: 25,
-  SOCIAL_ENGINEERING_PATTERN: 40
+  SOCIAL_ENGINEERING_PATTERN: 40,
+  UNIMAGINABLE_HIGH_AMOUNT: 45,
+  UNLIKELY_TIME_EXTREME_TRANSACTION: 55,
 };
 
 function calculateRiskScore(signals = [], data = {}) {
   let baseScore = 0;
 
-  signals.forEach(signal => {
+  signals.forEach((signal) => {
     if (signalScores[signal]) {
       baseScore += signalScores[signal];
     }
   });
 
-  // Behavior adaptive multiplier
   let multiplier = 1;
 
   if (data.avgAmount && data.amount) {
@@ -34,15 +33,18 @@ function calculateRiskScore(signals = [], data = {}) {
 
   let riskLevel = "LOW";
 
-  if (riskScore > 80) riskLevel = "HIGH";
-  else if (riskScore > 40) riskLevel = "MEDIUM";
+  if (riskScore > 80) {
+    riskLevel = "HIGH";
+  } else if (riskScore > 40) {
+    riskLevel = "MEDIUM";
+  }
 
   return {
     signals,
     baseScore,
     multiplier,
     riskScore,
-    riskLevel
+    riskLevel,
   };
 }
 

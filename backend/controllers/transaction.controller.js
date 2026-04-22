@@ -6,12 +6,15 @@ async function handleTransaction(req, res, forcedType) {
     const amount = req.body.amount;
     const deviceId = req.headers["x-device-id"];
     const type = forcedType || req.body.type;
+    const metadata = req.body.metadata || {};
 
     const result = await transactionService.processTransaction({
       user: req.user,
       type,
       amount,
-      deviceId
+      deviceId,
+      metadata,
+      ipAddress: req.ip
     });
 
     res.json(result);

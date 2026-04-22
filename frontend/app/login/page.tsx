@@ -44,6 +44,7 @@ export default function LoginPage() {
       // Save token
       localStorage.setItem("accessToken", data.accessToken);
       localStorage.setItem("refreshToken", data.refreshToken);
+      localStorage.setItem("deviceId", data.deviceId);
 
       // Redirect after login
       router.push('/onboarding');

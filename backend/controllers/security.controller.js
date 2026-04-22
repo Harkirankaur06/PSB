@@ -19,7 +19,8 @@ async function createPin(req, res) {
 }
 async function verifyPin(req, res) {
 
-  const { userId, pin } = req.body;
+  const userId = req.user._id;
+  const { pin } = req.body;
 
   const valid = await securityService.verifyPin(userId, pin);
 
@@ -28,7 +29,7 @@ async function verifyPin(req, res) {
 
 async function enableBiometric(req, res) {
 
-  const { userId } = req.body;
+  const userId = req.user._id;
 
   await securityService.enableBiometric(userId);
 

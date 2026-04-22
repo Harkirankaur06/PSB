@@ -17,6 +17,11 @@ const sessionSchema = new mongoose.Schema({
     required: true
   },
 
+  lastActivityAt: {
+    type: Date,
+    default: Date.now
+  },
+
   expiresAt: {
     type: Date,
     required: true
