@@ -34,8 +34,26 @@ async function updateGoal(req, res) {
   }
 }
 
+async function deleteGoal(req, res) {
+  try {
+    const goal = await goalService.deleteGoal(
+      req.user._id,
+      req.params.id
+    );
+
+    if (!goal) {
+      return res.status(404).json({ message: "Goal not found" });
+    }
+
+    res.json({ message: "Goal deleted" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
 module.exports = {
   createGoal,
   getGoals,
-  updateGoal
+  updateGoal,
+  deleteGoal
 };

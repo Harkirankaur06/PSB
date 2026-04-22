@@ -64,8 +64,13 @@ async function updateGoal(userId, goalId, data) {
   return goal;
 }
 
+async function deleteGoal(userId, goalId) {
+  return await Goal.findOneAndDelete({ _id: goalId, userId });
+}
+
 module.exports = {
   createGoal,
   getGoals,
-  updateGoal
+  updateGoal,
+  deleteGoal
 };
