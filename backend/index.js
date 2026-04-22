@@ -11,7 +11,9 @@ const securityRoutes = require("./routes/security.routes");
 
 const activityLogger = require("./middleware/activity.middleware");
 
-mongoose.connect("mongodb://127.0.0.1:27017/psb_hackathon");
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log("MongoDB connected ✅"))
+  .catch(err => console.error("MongoDB error ❌:", err));
 
 const app = express();
 
