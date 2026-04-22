@@ -44,7 +44,7 @@ export default function DashboardPage() {
         const token = localStorage.getItem("accessToken");
 
         const res = await fetch(
-          "http://localhost:5000/api/risk/dashboard",
+          "http://https://psb-backend.onrender.com/api/risk/dashboard",
           {
             headers: {
               Authorization: `Bearer ${token}`

@@ -35,7 +35,7 @@ export default function SecurityPage() {
         const token = localStorage.getItem("accessToken");
 
         const res = await fetch(
-          "http://localhost:5000/api/transaction/history",
+          "http://https://psb-backend.onrender.com/api/transaction/history",
           {
             headers: {
               Authorization: `Bearer ${token}`

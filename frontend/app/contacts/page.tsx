@@ -41,7 +41,7 @@ export default function ContactsPage() {
       const token = localStorage.getItem("accessToken");
 
       const res = await fetch(
-        "http://localhost:5000/api/security/trusted-contacts",
+        "http://https://psb-backend.onrender.com/api/security/trusted-contacts",
         {
           headers: {
             Authorization: `Bearer ${token}`
@@ -75,7 +75,7 @@ export default function ContactsPage() {
       const token = localStorage.getItem("accessToken");
 
       await fetch(
-        `http://localhost:5000/api/security/trusted-contacts/${id}`,
+        `http://https://psb-backend.onrender.com/api/security/trusted-contacts/${id}`,
         {
           method: "DELETE",
           headers: {

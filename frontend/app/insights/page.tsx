@@ -49,21 +49,21 @@ export default function InsightsPage() {
         const token = localStorage.getItem("accessToken");
 
         const dashboardRes = await fetch(
-          "http://localhost:5000/api/risk/dashboard",
+          "http://https://psb-backend.onrender.com/api/risk/dashboard",
           {
             headers: { Authorization: `Bearer ${token}` }
           }
         );
 
         const transactionRes = await fetch(
-          "http://localhost:5000/api/transaction/history",
+          "http://https://psb-backend.onrender.com/api/transaction/history",
           {
             headers: { Authorization: `Bearer ${token}` }
           }
         );
 
         const financialRes = await fetch(
-          "http://localhost:5000/api/financial",
+          "http://https://psb-backend.onrender.com/api/financial",
           {
             headers: { Authorization: `Bearer ${token}` }
           }

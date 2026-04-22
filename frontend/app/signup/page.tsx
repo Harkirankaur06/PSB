@@ -65,7 +65,7 @@ export default function SignupPage() {
     try {
 
       const res = await fetch(
-        "http://localhost:5000/api/auth/signup",
+        "http://https://psb-backend.onrender.com/api/auth/signup",
         {
           method: "POST",
           headers: {
