@@ -1,33 +1,227 @@
 const bcrypt = require("bcrypt");
 const User = require("../models/User");
+const {
+  generateRegistrationOptions,
+  verifyRegistrationResponse,
+  generateAuthenticationOptions,
+  verifyAuthenticationResponse,
+} = require("@simplewebauthn/server");
 
-async function createPin(userId, pin) {
-  const user = await User.findById(userId);
+const DEFAULT_APP_ORIGIN = "http://localhost:3000";
+const RP_NAME = "L.E.G.E.N.D.";
+
+function getOriginConfig(originHeader) {
+  const origin = originHeader || process.env.FRONTEND_ORIGIN || DEFAULT_APP_ORIGIN;
+  const url = new URL(origin);
+
+  return {
+    origin: url.origin,
+    rpID: url.hostname,
+  };
+}
+
+async function getUser(userId) {
+  return await User.findById(userId);
+}
+
+async function createPin(userId, pin, session = null) {
+  const user = await getUser(userId);
   const hash = await bcrypt.hash(pin, 10);
 
   user.security.pinHash = hash;
   await user.save();
 
+  if (session) {
+    session.secondFactorVerified = true;
+    await session.save();
+  }
+
   return true;
 }
 
-async function verifyPin(userId, pin) {
-  const user = await User.findById(userId);
+async function verifyPin(userId, pin, session = null) {
+  const user = await getUser(userId);
 
   if (!user.security.pinHash) {
     return false;
   }
 
-  return bcrypt.compare(pin, user.security.pinHash);
+  const valid = await bcrypt.compare(pin, user.security.pinHash);
+
+  if (valid && session) {
+    session.secondFactorVerified = true;
+    await session.save();
+  }
+
+  return valid;
 }
 
 async function enableBiometric(userId) {
-  const user = await User.findById(userId);
-
+  const user = await getUser(userId);
   user.security.biometricEnabled = true;
   await user.save();
 
   return true;
+}
+
+async function getSecurityStatus(userId, session = null) {
+  const user = await getUser(userId);
+  const hasPin = Boolean(user?.security?.pinHash);
+  const hasBiometric =
+    Boolean(user?.security?.biometricEnabled) &&
+    (user?.security?.webAuthnCredentials || []).length > 0;
+
+  return {
+    hasPin,
+    hasBiometric,
+    biometricEnabled: Boolean(user?.security?.biometricEnabled),
+    hasWebAuthnCredentials: (user?.security?.webAuthnCredentials || []).length > 0,
+    secondFactorVerified: Boolean(session?.secondFactorVerified),
+    needsSetup: !hasPin && !hasBiometric,
+    requiresVerification: (hasPin || hasBiometric) && !session?.secondFactorVerified,
+  };
+}
+
+async function generateBiometricRegistrationOptions(userId, session, originHeader) {
+  const user = await getUser(userId);
+  const { rpID } = getOriginConfig(originHeader);
+
+  const options = await generateRegistrationOptions({
+    rpName: RP_NAME,
+    rpID,
+    userName: user.email,
+    userDisplayName: user.name,
+    userID: user._id.toString(),
+    attestationType: "none",
+    authenticatorSelection: {
+      authenticatorAttachment: "platform",
+      residentKey: "preferred",
+      userVerification: "required",
+    },
+    excludeCredentials: (user.security.webAuthnCredentials || []).map((credential) => ({
+      id: credential.credentialID,
+      transports: credential.transports || [],
+    })),
+  });
+
+  session.currentChallenge = options.challenge;
+  session.currentChallengeType = "registration";
+  await session.save();
+
+  return options;
+}
+
+async function verifyBiometricRegistration(userId, session, originHeader, response) {
+  const user = await getUser(userId);
+  const { origin, rpID } = getOriginConfig(originHeader);
+
+  const verification = await verifyRegistrationResponse({
+    response,
+    expectedChallenge: session.currentChallenge,
+    expectedOrigin: origin,
+    expectedRPID: rpID,
+  });
+
+  if (!verification.verified || !verification.registrationInfo) {
+    return { verified: false };
+  }
+
+  const credential = verification.registrationInfo.credential;
+  const credentialExists = (user.security.webAuthnCredentials || []).some(
+    (item) => item.credentialID === credential.id
+  );
+
+  if (!credentialExists) {
+    user.security.webAuthnCredentials.push({
+      credentialID: credential.id,
+      publicKey: Buffer.from(credential.publicKey),
+      counter: credential.counter,
+      transports: credential.transports || response.response.transports || [],
+      deviceType: verification.registrationInfo.credentialDeviceType,
+      backedUp: verification.registrationInfo.credentialBackedUp,
+    });
+  }
+
+  user.security.biometricEnabled = true;
+  await user.save();
+
+  session.currentChallenge = null;
+  session.currentChallengeType = null;
+  session.secondFactorVerified = true;
+  await session.save();
+
+  return {
+    verified: true,
+    credentialID: credential.id,
+  };
+}
+
+async function generateBiometricAuthenticationOptions(userId, session, originHeader) {
+  const user = await getUser(userId);
+  const { rpID } = getOriginConfig(originHeader);
+
+  const credentials = user.security.webAuthnCredentials || [];
+
+  if (credentials.length === 0) {
+    throw new Error("No biometric credential registered");
+  }
+
+  const options = await generateAuthenticationOptions({
+    rpID,
+    allowCredentials: credentials.map((credential) => ({
+      id: credential.credentialID,
+      transports: credential.transports || [],
+    })),
+    userVerification: "required",
+  });
+
+  session.currentChallenge = options.challenge;
+  session.currentChallengeType = "authentication";
+  await session.save();
+
+  return options;
+}
+
+async function verifyBiometricAuthentication(userId, session, originHeader, response) {
+  const user = await getUser(userId);
+  const { origin, rpID } = getOriginConfig(originHeader);
+  const credentials = user.security.webAuthnCredentials || [];
+  const dbCredential = credentials.find(
+    (credential) => credential.credentialID === response.id
+  );
+
+  if (!dbCredential) {
+    throw new Error("Biometric credential not recognized");
+  }
+
+  const verification = await verifyAuthenticationResponse({
+    response,
+    expectedChallenge: session.currentChallenge,
+    expectedOrigin: origin,
+    expectedRPID: rpID,
+    credential: {
+      id: dbCredential.credentialID,
+      publicKey: new Uint8Array(dbCredential.publicKey.buffer, dbCredential.publicKey.byteOffset, dbCredential.publicKey.byteLength),
+      counter: dbCredential.counter,
+      transports: dbCredential.transports || [],
+    },
+  });
+
+  if (!verification.verified) {
+    return { verified: false };
+  }
+
+  dbCredential.counter = verification.authenticationInfo.newCounter;
+  await user.save();
+
+  session.currentChallenge = null;
+  session.currentChallengeType = null;
+  session.secondFactorVerified = true;
+  await session.save();
+
+  return {
+    verified: true,
+  };
 }
 
 async function evaluateTransactionAuthorization({
@@ -38,10 +232,12 @@ async function evaluateTransactionAuthorization({
   otpVerified = false,
   biometricVerified = false,
 }) {
-  const user = await User.findById(userId);
+  const user = await getUser(userId);
   const thresholdAmount = accountAmount > 0 ? accountAmount * 0.2 : 0;
   const requiresStepUp = thresholdAmount > 0 && amount >= thresholdAmount;
-  const biometricEnabled = Boolean(user?.security?.biometricEnabled);
+  const biometricEnabled =
+    Boolean(user?.security?.biometricEnabled) &&
+    (user?.security?.webAuthnCredentials || []).length > 0;
 
   if (requiresStepUp) {
     const pinValid = pin ? await verifyPin(userId, pin) : false;
@@ -99,7 +295,8 @@ async function evaluateTransactionAuthorization({
     allowed: false,
     requiresStepUp: false,
     thresholdAmount,
-    reason: "Transaction verification failed. Use biometric for smaller transactions or PIN plus OTP for larger ones.",
+    reason:
+      "Transaction verification failed. Use device biometric for smaller transactions or PIN plus OTP for larger ones.",
   };
 }
 
@@ -107,5 +304,10 @@ module.exports = {
   createPin,
   verifyPin,
   enableBiometric,
+  getSecurityStatus,
+  generateBiometricRegistrationOptions,
+  verifyBiometricRegistration,
+  generateBiometricAuthenticationOptions,
+  verifyBiometricAuthentication,
   evaluateTransactionAuthorization,
 };

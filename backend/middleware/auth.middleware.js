@@ -4,6 +4,23 @@ const Session = require("../models/Session");
 
 const INACTIVITY_LIMIT_MS = 5 * 60 * 1000;
 
+function shouldBypassSecondFactor(req) {
+  const path = req.originalUrl || req.url || "";
+
+  return (
+    path.startsWith("/api/security") ||
+    path.startsWith("/api/auth/logout") ||
+    path.startsWith("/api/auth/profile")
+  );
+}
+
+function userHasSecondFactorConfigured(user) {
+  return Boolean(
+    user?.security?.pinHash ||
+      (user?.security?.webAuthnCredentials || []).length > 0
+  );
+}
+
 async function protect(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
@@ -27,7 +44,10 @@ async function protect(req, res, next) {
       sessionQuery.deviceId = deviceId;
     }
 
-    let session = await Session.findOne(sessionQuery).sort({ lastActivityAt: -1, createdAt: -1 });
+    let session = await Session.findOne(sessionQuery).sort({
+      lastActivityAt: -1,
+      createdAt: -1,
+    });
 
     if (!session && deviceId) {
       session = await Session.findOne({ userId: user._id }).sort({
@@ -53,11 +73,23 @@ async function protect(req, res, next) {
 
     if (now - lastActivityAt > INACTIVITY_LIMIT_MS) {
       await Session.deleteOne({ _id: session._id });
-      return res.status(401).json({ message: "Logged out after 5 minutes of inactivity" });
+      return res
+        .status(401)
+        .json({ message: "Logged out after 5 minutes of inactivity" });
     }
 
     session.lastActivityAt = new Date(now);
     await session.save();
+
+    if (
+      userHasSecondFactorConfigured(user) &&
+      !session.secondFactorVerified &&
+      !shouldBypassSecondFactor(req)
+    ) {
+      return res
+        .status(403)
+        .json({ message: "Second-factor verification required" });
+    }
 
     req.user = user;
     req.session = session;

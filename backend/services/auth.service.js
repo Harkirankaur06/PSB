@@ -9,6 +9,12 @@ const {
   generateRefreshToken,verifyRefreshToken
 } = require("../utils/token.util");
 
+function shouldAutoVerifySecondFactor(user) {
+  const hasPin = Boolean(user?.security?.pinHash);
+  const hasWebAuthn = (user?.security?.webAuthnCredentials || []).length > 0;
+  return !hasPin && !hasWebAuthn;
+}
+
 async function signup(data, deviceName) {
   const { name, email, password } = data;
 
@@ -34,6 +40,7 @@ async function signup(data, deviceName) {
     refreshToken,
     deviceId,
     lastActivityAt: new Date(),
+    secondFactorVerified: true,
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
   });
 
@@ -69,6 +76,7 @@ async function login(data, deviceName) {
     refreshToken,
     deviceId,
     lastActivityAt: new Date(),
+    secondFactorVerified: shouldAutoVerifySecondFactor(user),
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
   });
 

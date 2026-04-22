@@ -1,43 +1,114 @@
 const securityService = require("../services/security.service");
 
-// async function createPin(req, res) {
-
-//   const { userId, pin } = req.body;
-
-//   await securityService.createPin(userId, pin);
-
-//   res.json({ message: "PIN created" });
-// }
 async function createPin(req, res) {
+  try {
+    const userId = req.user._id;
+    const { pin } = req.body;
 
-  const userId = req.user._id;   // from auth middleware
-  const { pin } = req.body;
-
-  await securityService.createPin(userId, pin);
-
-  res.json({ message: "PIN created" });
+    await securityService.createPin(userId, pin, req.session);
+    res.json({ message: "PIN created" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 }
+
 async function verifyPin(req, res) {
+  try {
+    const userId = req.user._id;
+    const { pin } = req.body;
 
-  const userId = req.user._id;
-  const { pin } = req.body;
-
-  const valid = await securityService.verifyPin(userId, pin);
-
-  res.json({ valid });
+    const valid = await securityService.verifyPin(userId, pin, req.session);
+    res.json({ valid });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 }
 
 async function enableBiometric(req, res) {
+  try {
+    const userId = req.user._id;
 
-  const userId = req.user._id;
+    await securityService.enableBiometric(userId);
+    res.json({ message: "Biometrics enabled" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
 
-  await securityService.enableBiometric(userId);
+async function getStatus(req, res) {
+  try {
+    const status = await securityService.getSecurityStatus(req.user._id, req.session);
+    res.json(status);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
 
-  res.json({ message: "Biometrics enabled" });
+async function getRegistrationOptions(req, res) {
+  try {
+    const options = await securityService.generateBiometricRegistrationOptions(
+      req.user._id,
+      req.session,
+      req.headers.origin
+    );
+
+    res.json(options);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+async function verifyRegistration(req, res) {
+  try {
+    const result = await securityService.verifyBiometricRegistration(
+      req.user._id,
+      req.session,
+      req.headers.origin,
+      req.body
+    );
+
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
+async function getAuthenticationOptions(req, res) {
+  try {
+    const options = await securityService.generateBiometricAuthenticationOptions(
+      req.user._id,
+      req.session,
+      req.headers.origin
+    );
+
+    res.json(options);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
+async function verifyAuthentication(req, res) {
+  try {
+    const result = await securityService.verifyBiometricAuthentication(
+      req.user._id,
+      req.session,
+      req.headers.origin,
+      req.body
+    );
+
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 }
 
 module.exports = {
   createPin,
   verifyPin,
-  enableBiometric
+  enableBiometric,
+  getStatus,
+  getRegistrationOptions,
+  verifyRegistration,
+  getAuthenticationOptions,
+  verifyAuthentication,
 };

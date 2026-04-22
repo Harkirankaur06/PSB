@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { startRegistration } from '@simplewebauthn/browser';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -8,10 +9,22 @@ import { CheckCircle2, Fingerprint, Lock, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? 'https://psb-backend.onrender.com';
+
 type OnboardingStep = 'welcome' | 'biometric' | 'pin' | 'complete';
 
-export default function OnboardingPage() {
+function getAuthHeaders() {
+  const token = localStorage.getItem('accessToken');
+  const deviceId = localStorage.getItem('deviceId');
 
+  return {
+    Authorization: `Bearer ${token}`,
+    'x-device-id': deviceId || '',
+  };
+}
+
+export default function OnboardingPage() {
   const router = useRouter();
 
   const [step, setStep] = useState<OnboardingStep>('welcome');
@@ -21,35 +34,60 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(false);
 
   const handleBiometric = async () => {
-
     setLoading(true);
+    setError('');
 
     try {
-
-      const token = localStorage.getItem("accessToken");
-
-      await fetch(
-        "https://psb-backend.onrender.com/api/security/enable-biometric",
+      const optionsRes = await fetch(
+        `${API_BASE_URL}/api/security/webauthn/register/options`,
         {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
+          method: 'POST',
+          headers: getAuthHeaders(),
         }
       );
 
+      const options = await optionsRes.json();
+
+      if (!optionsRes.ok) {
+        throw new Error(options.error || 'Unable to start biometric setup');
+      }
+
+      const registrationResponse = await startRegistration({
+        optionsJSON: options,
+      });
+
+      const verifyRes = await fetch(
+        `${API_BASE_URL}/api/security/webauthn/register/verify`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...getAuthHeaders(),
+          },
+          body: JSON.stringify(registrationResponse),
+        }
+      );
+
+      const verifyData = await verifyRes.json();
+
+      if (!verifyRes.ok || !verifyData.verified) {
+        throw new Error(verifyData.error || 'Biometric setup failed');
+      }
+
       setStep('pin');
-
     } catch (err) {
-      console.error("Biometric setup failed", err);
+      console.error('Biometric setup failed', err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Biometric setup failed on this device.'
+      );
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
-
   };
 
   const handlePinSubmit = async () => {
-
     setError('');
 
     if (pin.length !== 4 || !/^\d+$/.test(pin)) {
@@ -62,31 +100,31 @@ export default function OnboardingPage() {
       return;
     }
 
+    setLoading(true);
+
     try {
+      const res = await fetch(`${API_BASE_URL}/api/security/create-pin`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({ pin }),
+      });
 
-      const token = localStorage.getItem("accessToken");
+      const data = await res.json();
 
-      await fetch(
-        "https://psb-backend.onrender.com/api/security/create-pin",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`
-          },
-          body: JSON.stringify({ pin })
-        }
-      );
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to set PIN');
+      }
 
       setStep('complete');
-
     } catch (err) {
-
-      console.error("PIN setup failed", err);
-      setError("Failed to set PIN");
-
+      console.error('PIN setup failed', err);
+      setError(err instanceof Error ? err.message : 'Failed to set PIN');
+    } finally {
+      setLoading(false);
     }
-
   };
 
   const handleComplete = () => {
@@ -94,17 +132,11 @@ export default function OnboardingPage() {
   };
 
   if (step === 'welcome') {
-
     return (
-
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
-
         <div className="w-full max-w-md">
-
           <Card className="p-8">
-
             <div className="text-center mb-8">
-
               <div className="inline-flex items-center justify-center w-16 h-16 bg-primary/20 rounded-full mb-4">
                 <Fingerprint className="w-8 h-8 text-primary" />
               </div>
@@ -114,9 +146,8 @@ export default function OnboardingPage() {
               </h1>
 
               <p className="text-muted-foreground">
-                Set up biometric authentication and a PIN to protect your financial data
+                Set up device biometrics and a PIN to protect your financial data
               </p>
-
             </div>
 
             <Button
@@ -128,86 +159,75 @@ export default function OnboardingPage() {
             </Button>
 
             <div className="mt-6 border-t border-border pt-6">
-
               <p className="text-center text-sm text-muted-foreground">
-
                 <Link
                   href="/dashboard"
                   className="text-primary hover:underline font-medium"
                 >
                   Skip for now
                 </Link>
-
               </p>
-
             </div>
-
           </Card>
-
         </div>
-
       </div>
-
     );
-
   }
 
   if (step === 'biometric') {
-
     return (
-
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
-
         <div className="w-full max-w-md">
-
           <Card className="p-8">
-
             <div className="text-center mb-8">
-
               <div className="inline-flex items-center justify-center w-20 h-20 bg-primary/20 rounded-full mb-4">
                 <Fingerprint className="w-10 h-10 text-primary" />
               </div>
 
               <h1 className="text-2xl font-bold text-foreground mb-2">
-                Enable Biometric
+                Enable Device Biometrics
               </h1>
 
               <p className="text-muted-foreground">
-                Use Face ID or fingerprint for quick login
+                Register fingerprint, Face ID, Windows Hello, or your device passkey
               </p>
-
             </div>
 
-            <Button
-              onClick={handleBiometric}
-              disabled={loading}
-              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground h-11"
-            >
-              {loading ? "Enabling..." : "Enable Biometric"}
-            </Button>
+            {error && (
+              <div className="mb-6 p-3 bg-destructive/10 rounded-lg text-destructive text-sm">
+                {error}
+              </div>
+            )}
 
+            <div className="space-y-3">
+              <Button
+                onClick={handleBiometric}
+                disabled={loading}
+                className="w-full bg-primary hover:bg-primary/90 text-primary-foreground h-11"
+              >
+                {loading ? 'Enabling...' : 'Enable Biometric'}
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() => setStep('pin')}
+                className="w-full h-11"
+              >
+                Continue with PIN Only
+              </Button>
+            </div>
           </Card>
-
         </div>
-
       </div>
-
     );
-
   }
 
   if (step === 'pin') {
-
     return (
-
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
-
         <div className="w-full max-w-md">
-
           <Card className="p-8">
-
             <div className="text-center mb-8">
-
               <div className="inline-flex items-center justify-center w-16 h-16 bg-primary/20 rounded-full mb-4">
                 <Lock className="w-8 h-8 text-primary" />
               </div>
@@ -219,7 +239,6 @@ export default function OnboardingPage() {
               <p className="text-muted-foreground">
                 Create a 4-digit PIN as backup authentication
               </p>
-
             </div>
 
             {error && (
@@ -229,7 +248,6 @@ export default function OnboardingPage() {
             )}
 
             <div className="space-y-6">
-
               <Input
                 type="password"
                 maxLength={4}
@@ -245,36 +263,26 @@ export default function OnboardingPage() {
                 value={confirmPin}
                 onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ''))}
               />
-
             </div>
 
             <Button
               onClick={handlePinSubmit}
+              disabled={loading}
               className="w-full mt-8 bg-primary hover:bg-primary/90 text-primary-foreground h-11"
             >
-              Set PIN
+              {loading ? 'Saving...' : 'Set PIN'}
             </Button>
-
           </Card>
-
         </div>
-
       </div>
-
     );
-
   }
 
   return (
-
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
-
       <div className="w-full max-w-md">
-
         <Card className="p-8">
-
           <div className="text-center mb-8">
-
             <CheckCircle2 className="w-10 h-10 text-primary mx-auto mb-4" />
 
             <h1 className="text-3xl font-bold text-foreground mb-2">
@@ -284,7 +292,6 @@ export default function OnboardingPage() {
             <p className="text-muted-foreground">
               Your account security setup is complete
             </p>
-
           </div>
 
           <Button
@@ -293,13 +300,8 @@ export default function OnboardingPage() {
           >
             Go to Dashboard
           </Button>
-
         </Card>
-
       </div>
-
     </div>
-
   );
-
 }

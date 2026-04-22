@@ -47,7 +47,7 @@ export default function LoginPage() {
       localStorage.setItem("deviceId", data.deviceId);
 
       // Redirect after login
-      router.push('/onboarding');
+      router.push('/verify');
 
     } catch (err: any) {
       setError(err.message || "Something went wrong");
