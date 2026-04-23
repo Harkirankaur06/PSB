@@ -54,6 +54,7 @@ function getAuthHeaders() {
 export default function VerifyPage() {
   const router = useRouter();
   const [status, setStatus] = useState<SecurityStatus | null>(null);
+  const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [trustingDevice, setTrustingDevice] = useState(false);
@@ -204,7 +205,7 @@ export default function VerifyPage() {
           'Content-Type': 'application/json',
           ...getAuthHeaders(),
         },
-        body: JSON.stringify({ otp }),
+        body: JSON.stringify({ otp, pin }),
       });
 
       const data = await res.json();
@@ -217,6 +218,7 @@ export default function VerifyPage() {
         current
           ? {
               ...current,
+              secondFactorVerified: true,
               promptTrustDevice: false,
               currentDevice: current.currentDevice
                 ? { ...current.currentDevice, isTrusted: true }
@@ -226,6 +228,7 @@ export default function VerifyPage() {
       );
       setOtpOpen(false);
       setOtp('');
+      setPin('');
       setOtpStatus('Device trusted successfully.');
       if (status?.needsSetup) {
         router.push('/onboarding');
@@ -273,7 +276,7 @@ export default function VerifyPage() {
             <DialogHeader>
               <DialogTitle>Verify Login</DialogTitle>
               <DialogDescription>
-                Enter the OTP sent to your email to finish signing in.
+                Enter your 4-digit PIN and the OTP sent to your email to finish signing in.
                 {status?.promptTrustDevice
                   ? ' This will also mark the current device as trusted.'
                   : ''}
@@ -284,6 +287,23 @@ export default function VerifyPage() {
               <Button onClick={handleSendOtp} disabled={trustingDevice} className="w-full">
                 {trustingDevice ? 'Sending OTP...' : 'Send OTP to Email'}
               </Button>
+
+              <Input
+                type="password"
+                inputMode="numeric"
+                maxLength={4}
+                placeholder="Enter 4-digit PIN"
+                value={pin}
+                onChange={(e) => {
+                  const value = e.target.value.replace(/\D/g, '').slice(0, 4);
+                  if (value.length < pin.length) {
+                    track('field_correction', { field: 'pin' });
+                  } else {
+                    track('field_change', { field: 'pin' });
+                  }
+                  setPin(value);
+                }}
+              />
 
               <Input
                 type="text"
@@ -306,7 +326,10 @@ export default function VerifyPage() {
             </div>
 
             <DialogFooter>
-              <Button onClick={handleVerifyOtp} disabled={trustingDevice || otp.length !== 6}>
+              <Button
+                onClick={handleVerifyOtp}
+                disabled={trustingDevice || pin.length !== 4 || otp.length !== 6}
+              >
                 {trustingDevice ? 'Verifying...' : 'Verify OTP'}
               </Button>
             </DialogFooter>
@@ -340,7 +363,7 @@ export default function VerifyPage() {
             </h1>
 
             <p className="text-muted-foreground">
-              OTP verification is required before continuing to your account
+              PIN and OTP verification are required before continuing to your account
             </p>
           </div>
 
@@ -353,9 +376,9 @@ export default function VerifyPage() {
           <div className="space-y-4">
             <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-3">
               <div>
-                <p className="font-medium text-foreground">Login OTP required</p>
+                <p className="font-medium text-foreground">Login PIN + OTP required</p>
                 <p className="text-sm text-muted-foreground">
-                  Send and verify the email OTP to complete this sign-in.
+                  Enter your 4-digit PIN and verify the email OTP to complete this sign-in.
                   {status?.currentDevice?.deviceName
                     ? ` Current device: ${status.currentDevice.deviceName}.`
                     : ''}

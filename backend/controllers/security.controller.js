@@ -97,7 +97,8 @@ async function verifyOtp(req, res) {
       req.user._id,
       req.session,
       req.body.otp,
-      req.ip
+      req.ip,
+      req.body.pin
     );
     res.json(result);
   } catch (err) {

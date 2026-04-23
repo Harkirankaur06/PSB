@@ -253,9 +253,25 @@ async function sendDeviceOtp(userId, session = null, ipAddress = null) {
   };
 }
 
-async function verifyDeviceOtp(userId, session = null, otp, ipAddress = null) {
+async function verifyDeviceOtp(userId, session = null, otp, ipAddress = null, pin = null) {
   if (!session?.deviceId) {
     throw new Error("Current session device not found");
+  }
+
+  const user = await getUser(userId);
+
+  if (!user?.security?.pinHash) {
+    throw new Error("PIN setup is required before completing login verification.");
+  }
+
+  if (!pin) {
+    throw new Error("PIN is required to complete login verification.");
+  }
+
+  const pinValid = await verifyPin(userId, String(pin));
+
+  if (!pinValid) {
+    throw new Error("Incorrect PIN");
   }
 
   const record = await OtpToken.findOne({
@@ -288,6 +304,8 @@ async function verifyDeviceOtp(userId, session = null, otp, ipAddress = null) {
   await record.save();
 
   const trustResult = await trustCurrentDevice(userId, session);
+  session.secondFactorVerified = true;
+  await session.save();
 
   await auditService.logAction({
     userId,
@@ -296,6 +314,7 @@ async function verifyDeviceOtp(userId, session = null, otp, ipAddress = null) {
     deviceId: session.deviceId,
     metadata: {
       purpose: "new_device_login",
+      authMode: "pin+otp",
     },
   });
 
@@ -303,6 +322,7 @@ async function verifyDeviceOtp(userId, session = null, otp, ipAddress = null) {
     verified: true,
     trusted: true,
     trustScore: trustResult.trustScore,
+    secondFactorVerified: true,
   };
 }
 
