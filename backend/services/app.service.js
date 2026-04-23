@@ -142,6 +142,246 @@ function buildTransactionsSummary(transactions) {
   });
 }
 
+function getTransactionCategoryLabel(transaction) {
+  return (
+    transaction.metadata?.category ||
+    (transaction.type === "sip"
+      ? "Investment"
+      : transaction.type === "invest"
+        ? "Investment"
+        : transaction.type === "rebalance"
+          ? "Portfolio"
+          : "Transfer")
+  );
+}
+
+function isTransactionAnomalous(transaction) {
+  const hour = new Date(transaction.date).getHours();
+  return (
+    (transaction.riskScore || 0) >= 65 ||
+    transaction.status === "warning" ||
+    transaction.status === "blocked" ||
+    ((transaction.amount || 0) >= 15000 && (hour < 6 || hour >= 23)) ||
+    (transaction.reviewFlags || []).length > 0
+  );
+}
+
+function summarizeSalaryPattern(transactions) {
+  const salaryTransactions = transactions.filter(
+    (transaction) =>
+      String(transaction.metadata?.category || "").toLowerCase() === "salary"
+  );
+
+  if (salaryTransactions.length === 0) {
+    return "Salary timing is still being learned from available history.";
+  }
+
+  const averageDay = Math.round(
+    salaryTransactions.reduce((sum, transaction) => {
+      return sum + new Date(transaction.date).getDate();
+    }, 0) / salaryTransactions.length
+  );
+
+  return `Salary credits usually land around day ${averageDay} of the month.`;
+}
+
+function buildTransactionIntelligence(transactions, securityStatus) {
+  const sortedTransactions = [...transactions].sort(
+    (a, b) => new Date(b.date) - new Date(a.date)
+  );
+  const feed = sortedTransactions.slice(0, 12).map((transaction) => {
+    const hour = new Date(transaction.date).getHours();
+    const anomalyFlag = isTransactionAnomalous(transaction);
+    const category = getTransactionCategoryLabel(transaction);
+
+    return {
+      id: transaction.id,
+      title: transaction.description,
+      subtitle: `${category} • ${transaction.relativeDate}`,
+      amount: transaction.amount,
+      status: transaction.status,
+      riskScore: transaction.riskScore || 0,
+      category,
+      anomalyFlag,
+      anomalyReason: anomalyFlag
+        ? hour < 6 || hour >= 23
+          ? "Late-night timing or elevated risk signal detected."
+          : "Risk engine or behavior checks marked this transaction as unusual."
+        : "No unusual execution pattern detected.",
+    };
+  });
+
+  const now = Date.now();
+  const weekMs = 7 * 24 * 60 * 60 * 1000;
+  const recentWeek = transactions.filter(
+    (transaction) =>
+      String(transaction.metadata?.direction || "debit") === "debit" &&
+      now - new Date(transaction.date).getTime() <= weekMs
+  );
+  const priorWeek = transactions.filter((transaction) => {
+    const age = now - new Date(transaction.date).getTime();
+    return (
+      String(transaction.metadata?.direction || "debit") === "debit" &&
+      age > weekMs &&
+      age <= weekMs * 2
+    );
+  });
+
+  const categoryTotals = recentWeek.reduce((acc, transaction) => {
+    const category = getTransactionCategoryLabel(transaction);
+    acc[category] = (acc[category] || 0) + (transaction.amount || 0);
+    return acc;
+  }, {});
+  const priorCategoryTotals = priorWeek.reduce((acc, transaction) => {
+    const category = getTransactionCategoryLabel(transaction);
+    acc[category] = (acc[category] || 0) + (transaction.amount || 0);
+    return acc;
+  }, {});
+
+  const topGrowthCategory = Object.entries(categoryTotals)
+    .map(([category, total]) => {
+      const previousTotal = priorCategoryTotals[category] || 0;
+      const growthPercent =
+        previousTotal > 0
+          ? Math.round(((total - previousTotal) / previousTotal) * 100)
+          : total > 0
+            ? 100
+            : 0;
+      return { category, total, growthPercent };
+    })
+    .sort((a, b) => b.growthPercent - a.growthPercent)[0];
+
+  const unusualNightTransaction = transactions
+    .filter((transaction) => {
+      const hour = new Date(transaction.date).getHours();
+      return (transaction.amount || 0) >= 15000 && (hour < 6 || hour >= 23);
+    })
+    .sort((a, b) => (b.amount || 0) - (a.amount || 0))[0];
+
+  const blockedOrDelayed = transactions.filter(
+    (transaction) => transaction.status === "blocked" || transaction.status === "warning"
+  );
+
+  const insights = [];
+
+  if (topGrowthCategory && topGrowthCategory.total > 0) {
+    insights.push(
+      `${topGrowthCategory.category} spending is up ${Math.max(
+        topGrowthCategory.growthPercent,
+        0
+      )}% this week compared with the prior week.`
+    );
+  }
+
+  if (unusualNightTransaction) {
+    insights.push(
+      `You spent ${formatCurrencyLabel(
+        unusualNightTransaction.amount
+      )} unusually late at night, which raises a stronger fraud review signal.`
+    );
+  }
+
+  if (blockedOrDelayed.length > 0) {
+    insights.push(
+      `${blockedOrDelayed.length} wealth actions were blocked or delayed before execution by built-in risk checks.`
+    );
+  }
+
+  if (insights.length === 0) {
+    insights.push(
+      "Transaction history is feeding the AI engine, but current patterns look stable with no standout anomalies."
+    );
+  }
+
+  const weekendTransactions = transactions.filter((transaction) => {
+    const day = new Date(transaction.date).getDay();
+    return day === 0 || day === 6;
+  });
+  const weekdayTransactions = transactions.filter((transaction) => {
+    const day = new Date(transaction.date).getDay();
+    return day !== 0 && day !== 6;
+  });
+
+  const weekendAverage =
+    weekendTransactions.length > 0
+      ? weekendTransactions.reduce((sum, transaction) => sum + (transaction.amount || 0), 0) /
+        weekendTransactions.length
+      : 0;
+  const weekdayAverage =
+    weekdayTransactions.length > 0
+      ? weekdayTransactions.reduce((sum, transaction) => sum + (transaction.amount || 0), 0) /
+        weekdayTransactions.length
+      : 0;
+  const unusualActivityCount = transactions.filter(isTransactionAnomalous).length;
+
+  const behaviorPatterns = [
+    {
+      id: "weekend-spikes",
+      title: "Weekend spikes",
+      value:
+        weekendAverage > weekdayAverage * 1.15
+          ? "Detected"
+          : "Stable",
+      description:
+        weekendAverage > weekdayAverage * 1.15
+          ? `Weekend transaction size is ${Math.round(
+              ((weekendAverage - weekdayAverage) / Math.max(weekdayAverage, 1)) * 100
+            )}% above weekday average.`
+          : "Weekend and weekday transaction sizes are broadly consistent.",
+    },
+    {
+      id: "salary-cycle",
+      title: "Monthly salary cycle",
+      value: "Tracked",
+      description: summarizeSalaryPattern(transactions),
+    },
+    {
+      id: "unusual-activity",
+      title: "Unusual activity",
+      value: unusualActivityCount > 0 ? `${unusualActivityCount} flagged` : "No spikes",
+      description:
+        unusualActivityCount > 0
+          ? `${unusualActivityCount} transactions show anomaly or high-risk characteristics.`
+          : "Current history does not show unusual activity bursts.",
+    },
+  ];
+
+  const fraudDemoTransaction =
+    transactions
+      .filter((transaction) => transaction.status === "blocked" || transaction.status === "warning")
+      .sort((a, b) => (b.riskScore || 0) - (a.riskScore || 0))[0] ||
+    transactions.sort((a, b) => (b.amount || 0) - (a.amount || 0))[0];
+
+  const fraudDemo = {
+    title: "Protect wealth actions through built-in risk checks before execution",
+    amount: Math.max(fraudDemoTransaction?.amount || 0, 60000),
+    timeLabel: fraudDemoTransaction
+      ? new Date(fraudDemoTransaction.date).toLocaleTimeString("en-IN", {
+          hour: "numeric",
+          minute: "2-digit",
+        })
+      : "2:00 AM",
+    newDevice: true,
+    highRisk: true,
+    riskScore: Math.max(fraudDemoTransaction?.riskScore || 0, 94),
+    outcome:
+      securityStatus.accessMode === "duress" || securityStatus.restrictedMode
+        ? "Delayed for silent review"
+        : fraudDemoTransaction?.status === "blocked"
+          ? "Blocked"
+          : "Delayed / review triggered",
+    explanation:
+      "A high-value transaction on a new device at an unusual hour is intercepted before money moves.",
+  };
+
+  return {
+    feed,
+    insights,
+    behaviorPatterns,
+    fraudDemo,
+  };
+}
+
 function buildActionItems({ metrics, goals, aiInsights, riskData, transactions, marketIntel }) {
   const items = [];
 
@@ -626,6 +866,7 @@ async function getOverview(user, session) {
   const goals = buildGoalSummary(financialResult.goals);
   const transactions = buildTransactionsSummary(transactionsRaw);
   const assetAllocation = buildAssetAllocation(financial);
+  const transactionIntelligence = buildTransactionIntelligence(transactions, securityStatus);
   const dashboard = {
     portfolio: {
       totalValue: metrics.netWorth,
@@ -676,6 +917,7 @@ async function getOverview(user, session) {
       ...riskData,
       securityStatus,
     },
+    transactionIntelligence,
     contacts,
     actions: buildActionItems({
       metrics,

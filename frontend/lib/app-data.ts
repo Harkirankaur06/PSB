@@ -147,6 +147,36 @@ export interface AppOverview {
       hasDuressPassword?: boolean;
     };
   };
+  transactionIntelligence: {
+    feed: Array<{
+      id: string;
+      title: string;
+      subtitle: string;
+      amount: number;
+      status: 'pending' | 'completed' | 'blocked' | 'warning';
+      riskScore: number;
+      category: string;
+      anomalyFlag: boolean;
+      anomalyReason: string;
+    }>;
+    insights: string[];
+    behaviorPatterns: Array<{
+      id: string;
+      title: string;
+      value: string;
+      description: string;
+    }>;
+    fraudDemo: {
+      title: string;
+      amount: number;
+      timeLabel: string;
+      newDevice: boolean;
+      highRisk: boolean;
+      riskScore: number;
+      outcome: string;
+      explanation: string;
+    };
+  };
   contacts: AppContact[];
   actions: Array<{
     id: string;

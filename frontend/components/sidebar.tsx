@@ -13,7 +13,8 @@ import {
   Briefcase,
   TrendingUp,
   ScanSearch,
-  Landmark
+  Landmark,
+  Activity
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -50,6 +51,12 @@ const menuItems = [
     label: 'AI Insights',
     href: '/insights',
     description: 'Get account-specific AI recommendations, guidance, and navigation help.',
+  },
+  {
+    icon: Activity,
+    label: 'Transaction Intel',
+    href: '/transaction-intel',
+    description: 'See transaction history as AI fuel: smart feed tags, spending insights, behavior patterns, and fraud decisions.',
   },
   {
     icon: ScanSearch,
