@@ -1,21 +1,13 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { AlertCircle, Eye, EyeOff, X } from 'lucide-react';
+import { AlertCircle, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { apiRequest } from '@/lib/api-client';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { useBehaviorMonitor } from '@/lib/behavior-monitor';
 
 export default function LoginPage() {
@@ -25,23 +17,19 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [safetyOpen, setSafetyOpen] = useState(false);
   const previousPasswordLength = useRef(0);
   const panicHoldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const panicTriggered = useRef(false);
-  const { snapshot, track } = useBehaviorMonitor('login');
+  const privateSessionRequested = useRef(false);
+  const { track } = useBehaviorMonitor('login');
 
   const startHiddenPanicTrigger = () => {
-    panicTriggered.current = false;
-
     if (panicHoldTimer.current) {
       clearTimeout(panicHoldTimer.current);
     }
 
     panicHoldTimer.current = setTimeout(() => {
-      panicTriggered.current = true;
-      track('duress_signal', { detail: 'Hidden panic trigger opened private options' });
-      setSafetyOpen(true);
+      privateSessionRequested.current = true;
+      track('duress_signal', { detail: 'Hidden panic trigger armed a private session' });
     }, 1800);
   };
 
@@ -51,6 +39,14 @@ export default function LoginPage() {
       panicHoldTimer.current = null;
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (panicHoldTimer.current) {
+        clearTimeout(panicHoldTimer.current);
+      }
+    };
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -76,6 +72,21 @@ export default function LoginPage() {
       localStorage.setItem('refreshToken', data.refreshToken);
       localStorage.setItem('deviceId', data.deviceId);
 
+      if (privateSessionRequested.current) {
+        try {
+          await apiRequest('/api/security/private-session', {
+            method: 'POST',
+          });
+          track('duress_signal', {
+            detail: 'Hidden panic trigger activated after login',
+          });
+        } catch (activationError) {
+          console.error('Unable to activate private session', activationError);
+        } finally {
+          privateSessionRequested.current = false;
+        }
+      }
+
       router.push('/verify');
     } catch (err: any) {
       track('submit_failure', {
@@ -87,61 +98,9 @@ export default function LoginPage() {
     setLoading(false);
   };
 
-  const anomalyTone =
-    snapshot?.anomalyLevel === 'high'
-      ? 'border-warning/40 bg-warning/10 text-warning'
-      : snapshot?.anomalyLevel === 'medium'
-        ? 'border-primary/30 bg-primary/5 text-primary'
-        : 'border-border bg-muted/40 text-muted-foreground';
-
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-md">
-        <Dialog
-          open={safetyOpen}
-          onOpenChange={(open) => {
-            setSafetyOpen(open);
-            track(open ? 'dialog_open' : 'dialog_close', {
-              detail: 'Coercion support dialog',
-            });
-          }}
-        >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Private account options</DialogTitle>
-              <DialogDescription>
-                If you have already configured a private access password, use it in the normal
-                password field to enter protected mode without changing the visible login flow.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-3">
-              <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
-                Use your private access password in the same password field when you need protected mode.
-              </div>
-
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => {
-                  track('safe_exit', { detail: 'Safe exit chosen from login' });
-                  window.location.href = 'https://www.google.com';
-                }}
-              >
-                <X className="h-4 w-4" />
-                Safe exit now
-              </Button>
-            </div>
-
-            <DialogFooter>
-              <Button type="button" variant="ghost" onClick={() => setSafetyOpen(false)}>
-                Close
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
         <div className="mb-8 text-center">
           <h1 className="text-3xl font-bold text-primary mb-2">L.E.G.E.N.D.</h1>
           <p className="text-muted-foreground">Sign in to your financial journey</p>
@@ -149,28 +108,10 @@ export default function LoginPage() {
 
         <Card className="p-6">
           <form onSubmit={handleLogin} className="space-y-4">
-            <div className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2">
-              <p className="text-xs text-muted-foreground">
-                Private access uses the same login form and can be configured later from settings.
-              </p>
-              <Button type="button" variant="ghost" size="sm" onClick={() => setSafetyOpen(true)}>
-                Private options
-              </Button>
-            </div>
-
             {error && (
               <div className="flex items-center gap-3 rounded-lg bg-destructive/10 p-3 text-destructive">
                 <AlertCircle className="h-5 w-5 flex-shrink-0" />
                 <p className="text-sm">{error}</p>
-              </div>
-            )}
-
-            {snapshot && (
-              <div className={`rounded-lg border p-3 text-xs ${anomalyTone}`}>
-                Session anomaly score {snapshot.anomalyScore}/100.
-                {snapshot.correctionCount > 0
-                  ? ` ${snapshot.correctionCount} correction events have been recorded.`
-                  : ' Interaction pattern looks normal so far.'}
               </div>
             )}
 
@@ -261,12 +202,6 @@ export default function LoginPage() {
                 }
               }}
               onKeyUp={stopHiddenPanicTrigger}
-              onClick={(event) => {
-                if (panicTriggered.current) {
-                  event.preventDefault();
-                  panicTriggered.current = false;
-                }
-              }}
             >
               {loading ? 'Signing in...' : 'Sign In'}
             </Button>

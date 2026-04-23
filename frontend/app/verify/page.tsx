@@ -16,12 +16,10 @@ import {
 import {
   Fingerprint,
   Lock,
-  ShieldAlert,
   ShieldCheck,
-  UserRoundPlus,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { getDuressProtectionState, useBehaviorMonitor } from '@/lib/behavior-monitor';
+import { useBehaviorMonitor } from '@/lib/behavior-monitor';
 import { apiRequest } from '@/lib/api-client';
 
 const API_BASE_URL =
@@ -67,14 +65,8 @@ export default function VerifyPage() {
   const [otpOpen, setOtpOpen] = useState(false);
   const [otp, setOtp] = useState('');
   const [otpStatus, setOtpStatus] = useState('');
-  const [duressOpen, setDuressOpen] = useState(false);
-  const [trustedReviewRequested, setTrustedReviewRequested] = useState(false);
   const panicHoldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { snapshot, track, setDuressProtection } = useBehaviorMonitor('verify');
-  const duressActive =
-    status?.accessMode === 'duress' ||
-    status?.restrictedMode ||
-    getDuressProtectionState();
+  const { track, setDuressProtection } = useBehaviorMonitor('verify');
 
   const activatePrivateSession = async () => {
     try {
@@ -85,10 +77,6 @@ export default function VerifyPage() {
       track('duress_signal', {
         detail: 'Private session activated on backend',
       });
-      setDuressOpen(false);
-      setError(
-        'Private protection is active. Sensitive actions will be delayed for review.'
-      );
       setStatus((current) =>
         current
           ? {
@@ -99,9 +87,7 @@ export default function VerifyPage() {
           : current
       );
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Unable to enable private protection.'
-      );
+      setError(err instanceof Error ? err.message : 'Unable to continue on this device.');
     }
   };
 
@@ -121,6 +107,14 @@ export default function VerifyPage() {
       panicHoldTimer.current = null;
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (panicHoldTimer.current) {
+        clearTimeout(panicHoldTimer.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const fetchStatus = async () => {
@@ -413,55 +407,6 @@ export default function VerifyPage() {
           </DialogContent>
         </Dialog>
 
-        <Dialog
-          open={duressOpen}
-          onOpenChange={(open) => {
-            setDuressOpen(open);
-            track(open ? 'dialog_open' : 'dialog_close', {
-              detail: 'Duress support dialog',
-            });
-          }}
-        >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Coercion and duress protection</DialogTitle>
-              <DialogDescription>
-                If a customer is under pressure, the app can quietly route the next wealth action
-                into extra review instead of immediate completion.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-3">
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full justify-start"
-                onClick={activatePrivateSession}
-              >
-                <ShieldAlert className="h-4 w-4" />
-                Enable private session
-              </Button>
-
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => {
-                  setTrustedReviewRequested(true);
-                  track('trusted_contact_review', {
-                    detail: 'Trusted contact review requested',
-                  });
-                  setDuressOpen(false);
-                  setOtpStatus('Trusted contact review flagged for the next protected action.');
-                }}
-              >
-                <UserRoundPlus className="h-4 w-4" />
-                Request trusted-contact review
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-
         <Card className="p-8">
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-primary/20 rounded-full mb-4">
@@ -499,34 +444,6 @@ export default function VerifyPage() {
             </div>
           )}
 
-          {(duressActive || trustedReviewRequested || snapshot) && (
-            <div className="mb-6 space-y-3">
-              <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-medium text-foreground">Protected verification state</p>
-                    <p className="text-sm text-muted-foreground">
-                      {duressActive
-                        ? 'Silent review is active. High-risk wealth actions will route to extra checks.'
-                        : 'Behaviour telemetry is active for this verification session.'}
-                    </p>
-                  </div>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setDuressOpen(true)}>
-                    Support
-                  </Button>
-                </div>
-              </div>
-
-              {snapshot && (
-                <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
-                  UI anomaly score {snapshot.anomalyScore}/100 from {snapshot.correctionCount}{' '}
-                  corrections, {snapshot.otpFailures} OTP failures, and{' '}
-                  {snapshot.dialogToggleCount} dialog toggles.
-                </div>
-              )}
-            </div>
-          )}
-
           <div className="space-y-4">
             {status?.promptTrustDevice && !otpOpen && (
               <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-3">
@@ -541,18 +458,9 @@ export default function VerifyPage() {
                   <Button
                     onClick={() => setOtpOpen(true)}
                     disabled={trustingDevice}
-                    className="flex-1"
+                    className="w-full"
                   >
                     Open OTP Popup
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={trustingDevice}
-                    onClick={() => setDuressOpen(true)}
-                    className="flex-1"
-                  >
-                    Need Help
                   </Button>
                 </div>
               </div>
@@ -601,10 +509,6 @@ export default function VerifyPage() {
                 </Button>
               </div>
             )}
-
-            <Button type="button" variant="ghost" className="w-full" onClick={() => setDuressOpen(true)}>
-              Coercion or duress support
-            </Button>
           </div>
         </Card>
       </div>
