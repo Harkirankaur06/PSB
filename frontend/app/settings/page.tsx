@@ -13,7 +13,7 @@ import { useSessionSecurity } from '@/lib/session-security';
 export default function SettingsPage() {
   const { data, loading, error } = useAppOverview();
   const formatCurrency = useFormattedCurrency();
-  const { duressActive, refreshStatus } = useSessionSecurity();
+  const { duressActive, refreshStatus, status } = useSessionSecurity();
   const [duressPassword, setDuressPassword] = useState('');
   const [duressStatus, setDuressStatus] = useState('');
   const [duressLoading, setDuressLoading] = useState(false);
@@ -23,6 +23,10 @@ export default function SettingsPage() {
   const [resolveStatus, setResolveStatus] = useState('');
   const [resolveOtpLoading, setResolveOtpLoading] = useState(false);
   const [resolveLoading, setResolveLoading] = useState(false);
+  const recoveryActive =
+    duressActive || status?.accessMode === 'duress' || Boolean(status?.restrictedMode);
+  const hasDuressPasswordConfigured =
+    status?.hasDuressPassword ?? data?.cyber.securityStatus.hasDuressPassword ?? false;
 
   if (loading) {
     return (
@@ -59,6 +63,8 @@ export default function SettingsPage() {
         body: JSON.stringify({ duressPassword }),
       });
       setDuressPassword('');
+      await refreshStatus();
+      window.dispatchEvent(new Event('legend-security-refresh'));
       setDuressStatus('Private access password saved.');
     } catch (err) {
       setDuressStatus(err instanceof Error ? err.message : 'Unable to save private access password.');
@@ -233,7 +239,7 @@ export default function SettingsPage() {
                 </Button>
               </div>
               <p className="mt-3 text-xs text-muted-foreground">
-                Status: {data.cyber.securityStatus.hasDuressPassword ? 'Configured' : 'Not configured'}
+                Status: {hasDuressPasswordConfigured ? 'Configured' : 'Not configured'}
               </p>
               {duressStatus && <p className="mt-2 text-xs text-primary">{duressStatus}</p>}
             </div>
@@ -343,7 +349,7 @@ export default function SettingsPage() {
             <div className="mb-4">
               <h3 className="font-medium text-foreground">Protected Mode Recovery</h3>
               <p className="text-sm text-muted-foreground">
-                {duressActive
+                {recoveryActive
                   ? 'Use this only after the duress event is over. Confirm private password, PIN, and OTP to restore full access.'
                   : 'Protected mode is currently inactive. This recovery flow stays ready in case you need it later.'}
               </p>
@@ -381,14 +387,14 @@ export default function SettingsPage() {
               <Button
                 variant="outline"
                 onClick={sendResolveOtp}
-                disabled={!duressActive || resolveOtpLoading}
+                disabled={!recoveryActive || resolveOtpLoading}
                 data-duress-allow="true"
               >
                 {resolveOtpLoading ? 'Sending OTP...' : 'Send OTP'}
               </Button>
               <Button
                 onClick={resolveDuressSession}
-                disabled={!duressActive || resolveLoading}
+                disabled={!recoveryActive || resolveLoading}
                 data-duress-allow="true"
               >
                 {resolveLoading ? 'Restoring access...' : "I'm safe now"}

@@ -77,6 +77,7 @@ export default function LoginPage() {
           await apiRequest('/api/security/private-session', {
             method: 'POST',
           });
+          window.dispatchEvent(new Event('legend-security-refresh'));
           track('duress_signal', {
             detail: 'Hidden panic trigger activated after login',
           });

@@ -486,6 +486,18 @@ function buildSecurityFeed({ user, securityStatus, riskData, transactions, logs 
     });
   }
 
+  if (securityStatus.accessMode === "duress" || securityStatus.restrictedMode) {
+    feed.push({
+      id: "duress-active",
+      title: "Protected mode activated",
+      description:
+        "A duress signal is active for this session. Sensitive actions are restricted and routed through silent review.",
+      date: new Date(),
+      icon: "AlertTriangle",
+      type: "security",
+    });
+  }
+
   transactions.slice(0, 6).forEach((tx) => {
     feed.push({
       id: `tx-${tx.id}`,

@@ -277,8 +277,20 @@ export function useAppOverview() {
 
     loadOverview();
 
+    const handleRefresh = () => {
+      if (active) {
+        setLoading(true);
+        loadOverview();
+      }
+    };
+
+    window.addEventListener('legend-security-refresh', handleRefresh);
+    window.addEventListener('storage', handleRefresh);
+
     return () => {
       active = false;
+      window.removeEventListener('legend-security-refresh', handleRefresh);
+      window.removeEventListener('storage', handleRefresh);
     };
   }, []);
 
@@ -322,8 +334,20 @@ export function useSecurityFeed(enabled = true) {
 
     loadFeed();
 
+    const handleRefresh = () => {
+      if (active) {
+        setLoading(true);
+        loadFeed();
+      }
+    };
+
+    window.addEventListener('legend-security-refresh', handleRefresh);
+    window.addEventListener('storage', handleRefresh);
+
     return () => {
       active = false;
+      window.removeEventListener('legend-security-refresh', handleRefresh);
+      window.removeEventListener('storage', handleRefresh);
     };
   }, [enabled]);
 
@@ -367,8 +391,20 @@ export function useHeaderData(enabled = true) {
 
     loadHeaderData();
 
+    const handleRefresh = () => {
+      if (active) {
+        setLoading(true);
+        loadHeaderData();
+      }
+    };
+
+    window.addEventListener('legend-security-refresh', handleRefresh);
+    window.addEventListener('storage', handleRefresh);
+
     return () => {
       active = false;
+      window.removeEventListener('legend-security-refresh', handleRefresh);
+      window.removeEventListener('storage', handleRefresh);
     };
   }, [enabled]);
 

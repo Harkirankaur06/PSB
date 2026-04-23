@@ -74,6 +74,7 @@ export default function VerifyPage() {
         method: 'POST',
       });
       setDuressProtection(true);
+      window.dispatchEvent(new Event('legend-security-refresh'));
       track('duress_signal', {
         detail: 'Private session activated on backend',
       });
