@@ -2,7 +2,7 @@
 
 import { MainLayout } from '@/components/main-layout';
 import { Button } from '@/components/ui/button';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import {
   Dialog,
@@ -15,6 +15,27 @@ import {
 import { Star, ArrowRight, Filter } from 'lucide-react';
 import { AppOverview, useAppOverview, useFormattedCurrency } from '@/lib/app-data';
 import { apiRequest } from '@/lib/api-client';
+
+interface BankCatalogItem {
+  id: string;
+  bankCode: string;
+  bankName: string;
+  displayName: string;
+  description: string;
+  holderName: string;
+  accountType: string;
+  ifsc: string;
+  accountNumberMasked: string;
+}
+
+interface ConnectedBank {
+  id: string;
+  alias: string;
+  connectedAt: string;
+  isPrimary: boolean;
+  currentBalance: number;
+  dataset: BankCatalogItem;
+}
 
 const OpportunityCard = ({
   opportunity,
@@ -96,6 +117,9 @@ const OpportunityCard = ({
 
 export default function InvestPage() {
   const { data, loading, error, setData } = useAppOverview();
+  const [connections, setConnections] = useState<ConnectedBank[]>([]);
+  const [connectionsLoading, setConnectionsLoading] = useState(true);
+  const [connectionsError, setConnectionsError] = useState('');
   const [selectedRisk, setSelectedRisk] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [orderOpen, setOrderOpen] = useState(false);
@@ -108,11 +132,53 @@ export default function InvestPage() {
     amount: '',
     type: 'invest',
     goalId: '',
+    sourceConnectionId: '',
     pin: '',
     otp: '',
     notes: '',
   });
   const formatCurrency = useFormattedCurrency();
+
+  const loadConnections = async () => {
+    const response = await apiRequest<ConnectedBank[]>('/api/bank-link/connections');
+    setConnections(response);
+    setConnectionsError('');
+  };
+
+  useEffect(() => {
+    let active = true;
+
+    async function hydrateConnections() {
+      try {
+        const response = await apiRequest<ConnectedBank[]>('/api/bank-link/connections');
+
+        if (!active) {
+          return;
+        }
+
+        setConnections(response);
+        setConnectionsError('');
+      } catch (err) {
+        if (!active) {
+          return;
+        }
+
+        setConnectionsError(
+          err instanceof Error ? err.message : 'Unable to load linked bank accounts.'
+        );
+      } finally {
+        if (active) {
+          setConnectionsLoading(false);
+        }
+      }
+    }
+
+    hydrateConnections();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const refreshOverview = async () => {
     const overview = await apiRequest<AppOverview>('/api/app/overview');
@@ -121,6 +187,9 @@ export default function InvestPage() {
   };
 
   const openOrderTicket = (opportunity: AppOverview['opportunities'][number]) => {
+    const defaultConnection =
+      connections.find((connection) => connection.isPrimary) || connections[0] || null;
+
     setSelectedOpportunity(opportunity);
     setOrderStatus('');
     setOtpSent(false);
@@ -128,6 +197,7 @@ export default function InvestPage() {
       amount: String(opportunity.minimumInvestment),
       type: opportunity.category.toLowerCase().includes('sip') ? 'sip' : 'invest',
       goalId: data?.goals[0]?.id || '',
+      sourceConnectionId: defaultConnection?.id || '',
       pin: '',
       otp: '',
       notes: '',
@@ -161,10 +231,27 @@ export default function InvestPage() {
       return;
     }
 
+    const requiresFundingAccount = orderForm.type !== 'rebalance';
     const amount = Number(orderForm.amount);
     if (!amount || amount < selectedOpportunity.minimumInvestment) {
       setOrderStatus(
         `Enter an amount of at least ${formatCurrency(selectedOpportunity.minimumInvestment)}.`
+      );
+      return;
+    }
+
+    const selectedConnection = connections.find(
+      (connection) => connection.id === orderForm.sourceConnectionId
+    );
+
+    if (requiresFundingAccount && !selectedConnection) {
+      setOrderStatus('Select the linked bank account to use for this investment.');
+      return;
+    }
+
+    if (requiresFundingAccount && selectedConnection && amount > selectedConnection.currentBalance) {
+      setOrderStatus(
+        `Selected account only has ${formatCurrency(selectedConnection.currentBalance)} available.`
       );
       return;
     }
@@ -206,6 +293,17 @@ export default function InvestPage() {
             category: selectedOpportunity.category,
             notes: orderForm.notes,
             goalId: orderForm.goalId || undefined,
+            sourceConnectionId: requiresFundingAccount
+              ? orderForm.sourceConnectionId
+              : undefined,
+            fundingSource: selectedConnection
+              ? {
+                  connectionId: selectedConnection.id,
+                  alias: selectedConnection.alias,
+                  bankName: selectedConnection.dataset.bankName,
+                  accountNumberMasked: selectedConnection.dataset.accountNumberMasked,
+                }
+              : undefined,
             security: {
               pin: orderForm.pin,
               otp: orderForm.otp,
@@ -215,6 +313,7 @@ export default function InvestPage() {
       });
 
       await refreshOverview();
+      await loadConnections();
 
       const executionMode =
         response.transaction.metadata?.execution?.mode === 'live-ready'
@@ -465,6 +564,50 @@ export default function InvestPage() {
                   />
                 </div>
               </div>
+
+              {orderForm.type !== 'rebalance' && (
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-foreground">
+                    Pay from bank account
+                  </label>
+                  <select
+                    value={orderForm.sourceConnectionId}
+                    onChange={(event) =>
+                      setOrderForm((current) => ({
+                        ...current,
+                        sourceConnectionId: event.target.value,
+                      }))
+                    }
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    disabled={connectionsLoading || connections.length === 0}
+                  >
+                    <option value="">
+                      {connectionsLoading
+                        ? 'Loading linked accounts...'
+                        : connections.length === 0
+                          ? 'No linked bank accounts available'
+                          : 'Select source account'}
+                    </option>
+                    {connections.map((connection) => (
+                      <option key={connection.id} value={connection.id}>
+                        {connection.alias} ({connection.dataset.accountNumberMasked}) -{' '}
+                        {formatCurrency(connection.currentBalance)}
+                      </option>
+                    ))}
+                  </select>
+                  {connectionsError ? (
+                    <p className="mt-2 text-xs text-destructive">{connectionsError}</p>
+                  ) : connections.length === 0 ? (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Connect a bank account first in Bank Connections before investing.
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Choose which linked account should fund this order.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-foreground">Link to goal</label>

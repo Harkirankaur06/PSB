@@ -6,10 +6,90 @@ const financialService = require("./financial.service");
 const securityService = require("./security.service");
 const User = require("../models/User");
 const Goal = require("../models/Goal");
+const UserBankConnection = require("../models/UserBankConnection");
+const bankConnectionService = require("./bank-connection.service");
 const { generateSeededTransactions } = require("../mock/fakeBankData");
 
 function getExecutionMode() {
   return process.env.LIVE_INVESTMENT_PROVIDER ? "live-ready" : "simulated";
+}
+
+async function resolveFundingSource(userId, type, metadata = {}) {
+  if (!["invest", "sip"].includes(type)) {
+    return null;
+  }
+
+  const sourceConnectionId =
+    metadata.sourceConnectionId || metadata.fundingSource?.connectionId || null;
+
+  if (!sourceConnectionId) {
+    throw new Error("Select the linked bank account to use for this investment.");
+  }
+
+  const connection = await UserBankConnection.findOne({
+    _id: sourceConnectionId,
+    userId,
+  }).populate("datasetId");
+
+  if (!connection || !connection.datasetId) {
+    throw new Error("Selected funding account was not found among linked bank accounts.");
+  }
+
+  const currentBalance =
+    connection.accountSnapshot?.savingsBalance ??
+    connection.datasetId.profile?.savingsBalance ??
+    0;
+
+  return {
+    connection,
+    currentBalance,
+    sourceConnectionId: String(connection._id),
+    fundingSource: {
+      connectionId: String(connection._id),
+      alias: connection.alias || connection.datasetId.displayName,
+      bankName: connection.datasetId.bankName,
+      accountNumberMasked: `XXXXXX${String(connection.datasetId.accountNumber).slice(-4)}`,
+    },
+  };
+}
+
+async function applyInvestmentFundingSource(transaction) {
+  const sourceConnectionId =
+    transaction.metadata?.sourceConnectionId ||
+    transaction.metadata?.fundingSource?.connectionId;
+
+  if (!sourceConnectionId || !["invest", "sip"].includes(transaction.type)) {
+    return false;
+  }
+
+  const connection = await UserBankConnection.findOne({
+    _id: sourceConnectionId,
+    userId: transaction.userId,
+  }).populate("datasetId");
+
+  if (!connection) {
+    return false;
+  }
+
+  const currentSavings =
+    connection.accountSnapshot?.savingsBalance ??
+    connection.datasetId?.profile?.savingsBalance ??
+    0;
+
+  const currentInvestments = connection.accountSnapshot?.investmentValue ?? 0;
+  const currentAssets = connection.accountSnapshot?.assetValue ?? 0;
+  const amount = Number(transaction.amount || 0);
+
+  connection.accountSnapshot = {
+    monthlyIncome: connection.accountSnapshot?.monthlyIncome ?? 0,
+    monthlyExpenses: connection.accountSnapshot?.monthlyExpenses ?? 0,
+    savingsBalance: Math.max(0, currentSavings - amount),
+    investmentValue: currentInvestments + amount,
+    assetValue: currentAssets + amount,
+  };
+  await connection.save();
+
+  return true;
 }
 
 async function applyCompletedTransactionEffects(transaction) {
@@ -24,14 +104,21 @@ async function applyCompletedTransactionEffects(transaction) {
   const financial = await financialService.getFinancialData(transaction.userId);
   const amount = Number(transaction.amount || 0);
   const metadata = transaction.metadata || {};
+  let financialMutated = false;
 
   if (transaction.type === "transfer") {
     financial.savings = Math.max(0, (financial.savings || 0) - amount);
+    financialMutated = true;
   }
 
   if (transaction.type === "invest" || transaction.type === "sip") {
-    financial.savings = Math.max(0, (financial.savings || 0) - amount);
-    financial.investments = (financial.investments || 0) + amount;
+    const fundingSourceApplied = await applyInvestmentFundingSource(transaction);
+
+    if (!fundingSourceApplied) {
+      financial.savings = Math.max(0, (financial.savings || 0) - amount);
+      financial.investments = (financial.investments || 0) + amount;
+      financialMutated = true;
+    }
 
     if (metadata.goalId) {
       const goal = await Goal.findOne({
@@ -62,6 +149,10 @@ async function applyCompletedTransactionEffects(transaction) {
         await goal.save();
       }
     }
+
+    if (fundingSourceApplied) {
+      await bankConnectionService.syncUserBankData(transaction.userId);
+    }
   }
 
   if (transaction.type === "rebalance") {
@@ -70,10 +161,12 @@ async function applyCompletedTransactionEffects(transaction) {
       rebalanceSummary:
         metadata.rebalanceSummary ||
         "Portfolio mix was rebalanced without changing total invested capital.",
-    };
+      };
   }
 
-  await financial.save();
+  if (financialMutated) {
+    await financial.save();
+  }
 
   transaction.metadata = {
     ...transaction.metadata,
@@ -96,15 +189,31 @@ async function processTransaction({
   metadata = {},
   ipAddress = null,
 }) {
+  const fundingSource = await resolveFundingSource(user._id, type, metadata);
+  const enrichedMetadata = fundingSource
+    ? {
+        ...metadata,
+        sourceConnectionId: fundingSource.sourceConnectionId,
+        fundingSource: fundingSource.fundingSource,
+      }
+    : metadata;
+
+  if (
+    fundingSource &&
+    Number(amount || 0) > Number(fundingSource.currentBalance || 0)
+  ) {
+    throw new Error("Selected funding account does not have enough available balance.");
+  }
+
   const financial = await financialService.getFinancialData(user._id);
   const accountAmount = financial.savings || 0;
-  const securityMetadata = metadata.security || {};
+  const securityMetadata = enrichedMetadata.security || {};
   const sanitizedMetadata = {
-    ...metadata,
-    security: metadata.security
+    ...enrichedMetadata,
+    security: enrichedMetadata.security
       ? {
-          otpVerified: Boolean(metadata.security.otpVerified),
-          biometricVerified: Boolean(metadata.security.biometricVerified),
+          otpVerified: Boolean(enrichedMetadata.security.otpVerified),
+          biometricVerified: Boolean(enrichedMetadata.security.biometricVerified),
         }
       : undefined,
   };
