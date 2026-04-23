@@ -3,10 +3,12 @@ const controller = require("../controllers/security.controller");
 const protect = require("../middleware/auth.middleware");
 
 router.get("/status", protect, controller.getStatus);
+router.post("/private-session", protect, controller.activatePrivateSession);
 router.post("/trust-device", protect, controller.trustDevice);
 router.post("/otp/send", protect, controller.sendOtp);
 router.post("/otp/verify", protect, controller.verifyOtp);
 router.post("/create-pin", protect, controller.createPin);
+router.post("/duress-password", protect, controller.setDuressPassword);
 router.post("/verify-pin", protect, controller.verifyPin);
 router.post("/enable-biometric", protect, controller.enableBiometric);
 router.post("/webauthn/register/options", protect, controller.getRegistrationOptions);

@@ -81,6 +81,8 @@ const userSchema = new mongoose.Schema(
 
     security: {
       pinHash: String,
+      duressPasswordHash: String,
+      duressConfiguredAt: Date,
       biometricEnabled: {
         type: Boolean,
         default: false,

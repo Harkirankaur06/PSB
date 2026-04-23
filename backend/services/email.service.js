@@ -62,7 +62,21 @@ async function sendNewDeviceNotification({ email, deviceName }) {
   });
 }
 
+async function sendDuressAlertEmail({ email, deviceName, reason }) {
+  return sendEmail({
+    to: email,
+    subject: "Silent protection mode activated",
+    text: `A protected account access event was triggered from ${deviceName || "a device"}.${
+      reason ? ` Reason: ${reason}.` : ""
+    } Review the session immediately.`,
+    html: `<p>A protected account access event was triggered from <strong>${
+      deviceName || "a device"
+    }</strong>.</p><p>${reason ? `Reason: <strong>${reason}</strong>. ` : ""}Review the session immediately.</p>`,
+  });
+}
+
 module.exports = {
   sendOtpEmail,
   sendNewDeviceNotification,
+  sendDuressAlertEmail,
 };

@@ -257,6 +257,94 @@ function buildActionItems({ metrics, goals, aiInsights, riskData, transactions, 
   return items;
 }
 
+function maskCurrencyValue(value, fallback) {
+  return Math.min(Math.max(Math.round(fallback), 0), value || fallback);
+}
+
+function buildRestrictedOverviewMode(overview) {
+  const safeBalance = 5000;
+
+  return {
+    ...overview,
+    profile: {
+      ...overview.profile,
+      trustScore: Math.min(overview.profile.trustScore, 85),
+    },
+    financial: {
+      income: maskCurrencyValue(overview.financial.income, 25000),
+      expenses: maskCurrencyValue(overview.financial.expenses, 18000),
+      savings: safeBalance,
+      assets: 0,
+      investments: 0,
+    },
+    metrics: {
+      ...overview.metrics,
+      netWorth: safeBalance,
+      monthlyBalance: 2000,
+      investmentRatio: 0,
+    },
+    goals: [],
+    transactions: overview.transactions.slice(0, 3).map((transaction, index) => ({
+      ...transaction,
+      amount: Math.min(transaction.amount, 2500 + index * 500),
+      description: "Routine account activity",
+    })),
+    dashboard: {
+      ...overview.dashboard,
+      portfolio: {
+        totalValue: safeBalance,
+        previousValue: 4800,
+        changeAmount: 200,
+        changePercent: 4,
+      },
+      assetAllocation: [{ name: "Cash", value: safeBalance, percentage: 100 }],
+      investmentGrowth: overview.dashboard.investmentGrowth.map((item, index) => ({
+        ...item,
+        value: 4200 + index * 160,
+      })),
+      goals: [],
+      recentTransactions: overview.dashboard.recentTransactions.slice(0, 3).map((transaction, index) => ({
+        ...transaction,
+        amount: Math.min(transaction.amount, 2500 + index * 500),
+        description: "Routine account activity",
+      })),
+      insights: [
+        {
+          id: "private-mode",
+          title: "Private mode active",
+          description: "Sensitive balances and high-risk actions are currently hidden or delayed.",
+        },
+      ],
+    },
+    actions: [
+      {
+        id: "private-review",
+        title: "Review protected session",
+        description: "Sensitive actions are temporarily restricted in this private session.",
+        status: "pending",
+        priority: "high",
+        value: 0,
+        actionPath: "/security",
+        reviewType: "private",
+        reviewMessage: "Private protection mode is active. Transfers and investment actions are delayed for review.",
+      },
+    ],
+    protection: [
+      {
+        id: "private-session",
+        name: "Protected Session Hold",
+        status: "active",
+        coverage: safeBalance,
+        premium: 0,
+        renewalDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30),
+        source: "private-mode",
+      },
+    ],
+    contacts: [],
+    opportunities: [],
+  };
+}
+
 function buildProtectionPolicies({ financial, riskData, securityStatus, contacts }) {
   const monthlyExpenses = financial.expenses || 0;
   const emergencyCoverage = monthlyExpenses * 6;
@@ -555,7 +643,7 @@ async function getOverview(user, session) {
     },
   };
 
-  return {
+  const overview = {
     profile: {
       id: String(profile._id),
       name: profile.name,
@@ -600,6 +688,8 @@ async function getOverview(user, session) {
       marketIntel,
     }),
   };
+
+  return securityStatus.fakeDashboardMode ? buildRestrictedOverviewMode(overview) : overview;
 }
 
 async function getContacts(userId) {
@@ -626,6 +716,15 @@ async function getSecurityFeed(user, session) {
     RiskLog.find({ userId: user._id }).sort({ createdAt: -1 }).limit(8),
   ]);
 
+  const transactions = buildTransactionsSummary(transactionDocs);
+  const safeTransactions = securityStatus.fakeDashboardMode
+    ? transactions.slice(0, 3).map((transaction, index) => ({
+        ...transaction,
+        amount: Math.min(transaction.amount, 2500 + index * 500),
+        description: "Routine account activity",
+      }))
+    : transactions;
+
   return {
     status: securityStatus,
     cyber: riskData,
@@ -633,7 +732,7 @@ async function getSecurityFeed(user, session) {
       user,
       securityStatus,
       riskData,
-      transactions: buildTransactionsSummary(transactionDocs),
+      transactions: safeTransactions,
       logs,
     }),
   };
@@ -653,7 +752,7 @@ async function getHeaderData(user, session) {
   const goals = buildGoalSummary(financialResult.goals);
   const transactions = buildTransactionsSummary(transactionDocs);
 
-  return {
+  const headerData = {
     profile: {
       id: String(profile._id),
       name: profile.name,
@@ -672,6 +771,30 @@ async function getHeaderData(user, session) {
       auditLogs,
     }),
   };
+
+  if (securityStatus.fakeDashboardMode) {
+    return {
+      ...headerData,
+      profile: {
+        ...headerData.profile,
+        balance: 5000,
+        netWorth: 5000,
+      },
+      notifications: [
+        {
+          id: "private-mode",
+          title: "Private mode active",
+          description: "Sensitive balances and actions are currently restricted.",
+          timestamp: "just now",
+          read: false,
+          type: "security",
+        },
+        ...headerData.notifications,
+      ].slice(0, 6),
+    };
+  }
+
+  return headerData;
 }
 
 module.exports = {

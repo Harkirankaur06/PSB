@@ -11,8 +11,10 @@ import {
   Shield,
   Lock,
   AlertTriangle,
+  ShieldAlert,
 } from 'lucide-react';
 import { useSecurityFeed } from '@/lib/app-data';
+import { getBehaviorSnapshot, getDuressProtectionState } from '@/lib/behavior-monitor';
 
 const iconMap: Record<string, JSX.Element> = {
   UserPlus: <UserPlus className="h-5 w-5" />,
@@ -45,6 +47,11 @@ export default function SecurityPage() {
   }
 
   const accountSecure = data.cyber.protectionScore >= 70 && data.status.hasPin;
+  const behaviorSnapshot = getBehaviorSnapshot();
+  const duressActive =
+    data.status.accessMode === 'duress' ||
+    data.status.restrictedMode ||
+    getDuressProtectionState();
 
   return (
     <MainLayout>
@@ -72,6 +79,41 @@ export default function SecurityPage() {
             </div>
           </div>
         </Card>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card className={`p-6 ${duressActive ? 'border-warning/30 bg-warning/5' : ''}`}>
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <ShieldAlert className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <h2 className="font-semibold text-foreground mb-1">Duress protection state</h2>
+                <p className="text-sm text-muted-foreground">
+                  {duressActive
+                    ? 'Silent review mode is active for this session. Sensitive actions should route to extra review.'
+                    : 'No duress signal is active right now.'}
+                </p>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <h2 className="font-semibold text-foreground mb-1">UI-behaviour anomalies</h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              Frontend telemetry can flag stressed interaction patterns before wealth actions complete.
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="rounded-lg bg-muted/50 p-3">
+                <p className="text-xs text-muted-foreground">Anomaly score</p>
+                <p className="text-2xl font-bold text-foreground">{behaviorSnapshot.anomalyScore}</p>
+              </div>
+              <div className="rounded-lg bg-muted/50 p-3">
+                <p className="text-xs text-muted-foreground">Corrections</p>
+                <p className="text-2xl font-bold text-foreground">{behaviorSnapshot.correctionCount}</p>
+              </div>
+            </div>
+          </Card>
+        </div>
 
         <div>
           <h2 className="text-lg font-semibold text-foreground mb-4">Activity Timeline</h2>

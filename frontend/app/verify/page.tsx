@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { startAuthentication } from '@simplewebauthn/browser';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -13,8 +13,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Fingerprint, Lock, ShieldCheck } from 'lucide-react';
+import {
+  Fingerprint,
+  Lock,
+  ShieldAlert,
+  ShieldCheck,
+  UserRoundPlus,
+} from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { getDuressProtectionState, useBehaviorMonitor } from '@/lib/behavior-monitor';
+import { apiRequest } from '@/lib/api-client';
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? 'https://psb-backend.onrender.com';
@@ -27,6 +35,8 @@ interface SecurityStatus {
   secondFactorVerified: boolean;
   needsSetup: boolean;
   requiresVerification: boolean;
+  accessMode?: 'normal' | 'duress';
+  restrictedMode?: boolean;
   promptTrustDevice?: boolean;
   currentDevice?: {
     deviceId: string;
@@ -57,6 +67,60 @@ export default function VerifyPage() {
   const [otpOpen, setOtpOpen] = useState(false);
   const [otp, setOtp] = useState('');
   const [otpStatus, setOtpStatus] = useState('');
+  const [duressOpen, setDuressOpen] = useState(false);
+  const [trustedReviewRequested, setTrustedReviewRequested] = useState(false);
+  const panicHoldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { snapshot, track, setDuressProtection } = useBehaviorMonitor('verify');
+  const duressActive =
+    status?.accessMode === 'duress' ||
+    status?.restrictedMode ||
+    getDuressProtectionState();
+
+  const activatePrivateSession = async () => {
+    try {
+      await apiRequest('/api/security/private-session', {
+        method: 'POST',
+      });
+      setDuressProtection(true);
+      track('duress_signal', {
+        detail: 'Private session activated on backend',
+      });
+      setDuressOpen(false);
+      setError(
+        'Private protection is active. Sensitive actions will be delayed for review.'
+      );
+      setStatus((current) =>
+        current
+          ? {
+              ...current,
+              accessMode: 'duress',
+              restrictedMode: true,
+            }
+          : current
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Unable to enable private protection.'
+      );
+    }
+  };
+
+  const startHiddenPanicTrigger = () => {
+    if (panicHoldTimer.current) {
+      clearTimeout(panicHoldTimer.current);
+    }
+
+    panicHoldTimer.current = setTimeout(() => {
+      activatePrivateSession();
+    }, 1800);
+  };
+
+  const stopHiddenPanicTrigger = () => {
+    if (panicHoldTimer.current) {
+      clearTimeout(panicHoldTimer.current);
+      panicHoldTimer.current = null;
+    }
+  };
 
   useEffect(() => {
     const fetchStatus = async () => {
@@ -95,9 +159,7 @@ export default function VerifyPage() {
       } catch (err) {
         console.error('Security status fetch failed', err);
         setError(
-          err instanceof Error
-            ? err.message
-            : 'Unable to load verification methods.'
+          err instanceof Error ? err.message : 'Unable to load verification methods.'
         );
       } finally {
         setLoading(false);
@@ -110,6 +172,7 @@ export default function VerifyPage() {
   const handleBiometricVerify = async () => {
     setActionLoading(true);
     setError('');
+    track('submit_attempt', { detail: 'Biometric verification started' });
 
     try {
       const optionsRes = await fetch(
@@ -151,6 +214,7 @@ export default function VerifyPage() {
       router.push('/dashboard');
     } catch (err) {
       console.error('Biometric verification failed', err);
+      track('submit_failure', { detail: 'Biometric verification failed' });
       setError(
         err instanceof Error
           ? err.message
@@ -164,6 +228,7 @@ export default function VerifyPage() {
   const handlePinVerify = async () => {
     setActionLoading(true);
     setError('');
+    track('submit_attempt', { detail: 'PIN verification started' });
 
     try {
       const res = await fetch(`${API_BASE_URL}/api/security/verify-pin`, {
@@ -188,6 +253,9 @@ export default function VerifyPage() {
       router.push('/dashboard');
     } catch (err) {
       console.error('PIN verification failed', err);
+      track('submit_failure', {
+        detail: err instanceof Error ? err.message : 'PIN verification failed',
+      });
       setError(err instanceof Error ? err.message : 'PIN verification failed');
     } finally {
       setActionLoading(false);
@@ -198,6 +266,7 @@ export default function VerifyPage() {
     setTrustingDevice(true);
     setError('');
     setOtpStatus('');
+    track('otp_request', { detail: 'OTP requested for device trust' });
 
     try {
       const res = await fetch(`${API_BASE_URL}/api/security/otp/send`, {
@@ -217,6 +286,9 @@ export default function VerifyPage() {
           : 'OTP generated. Email service is in fallback mode; check backend logs.'
       );
     } catch (err) {
+      track('otp_failure', {
+        detail: err instanceof Error ? err.message : 'Unable to send OTP',
+      });
       setError(err instanceof Error ? err.message : 'Unable to send OTP.');
     } finally {
       setTrustingDevice(false);
@@ -226,6 +298,7 @@ export default function VerifyPage() {
   const handleVerifyOtp = async () => {
     setTrustingDevice(true);
     setError('');
+    track('otp_attempt', { detail: 'OTP verification attempted' });
 
     try {
       const res = await fetch(`${API_BASE_URL}/api/security/otp/verify`, {
@@ -258,6 +331,9 @@ export default function VerifyPage() {
       setOtp('');
       setOtpStatus('Device trusted successfully.');
     } catch (err) {
+      track('otp_failure', {
+        detail: err instanceof Error ? err.message : 'Unable to verify OTP',
+      });
       setError(err instanceof Error ? err.message : 'Unable to verify OTP.');
     } finally {
       setTrustingDevice(false);
@@ -279,7 +355,15 @@ export default function VerifyPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-md">
-        <Dialog open={otpOpen} onOpenChange={setOtpOpen}>
+        <Dialog
+          open={otpOpen}
+          onOpenChange={(open) => {
+            setOtpOpen(open);
+            track(open ? 'dialog_open' : 'dialog_close', {
+              detail: 'OTP trust dialog',
+            });
+          }}
+        >
           <DialogContent showCloseButton={false}>
             <DialogHeader>
               <DialogTitle>Verify New Device</DialogTitle>
@@ -300,7 +384,15 @@ export default function VerifyPage() {
                 maxLength={6}
                 placeholder="Enter 6-digit OTP"
                 value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                onChange={(e) => {
+                  const value = e.target.value.replace(/\D/g, '');
+                  if (value.length < otp.length) {
+                    track('field_correction', { field: 'otp' });
+                  } else {
+                    track('field_change', { field: 'otp' });
+                  }
+                  setOtp(value);
+                }}
               />
 
               {otpStatus && <p className="text-sm text-muted-foreground">{otpStatus}</p>}
@@ -321,10 +413,75 @@ export default function VerifyPage() {
           </DialogContent>
         </Dialog>
 
+        <Dialog
+          open={duressOpen}
+          onOpenChange={(open) => {
+            setDuressOpen(open);
+            track(open ? 'dialog_open' : 'dialog_close', {
+              detail: 'Duress support dialog',
+            });
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Coercion and duress protection</DialogTitle>
+              <DialogDescription>
+                If a customer is under pressure, the app can quietly route the next wealth action
+                into extra review instead of immediate completion.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full justify-start"
+                onClick={activatePrivateSession}
+              >
+                <ShieldAlert className="h-4 w-4" />
+                Enable private session
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => {
+                  setTrustedReviewRequested(true);
+                  track('trusted_contact_review', {
+                    detail: 'Trusted contact review requested',
+                  });
+                  setDuressOpen(false);
+                  setOtpStatus('Trusted contact review flagged for the next protected action.');
+                }}
+              >
+                <UserRoundPlus className="h-4 w-4" />
+                Request trusted-contact review
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         <Card className="p-8">
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-primary/20 rounded-full mb-4">
-              <ShieldCheck className="w-8 h-8 text-primary" />
+              <button
+                type="button"
+                className="inline-flex items-center justify-center"
+                onPointerDown={startHiddenPanicTrigger}
+                onPointerUp={stopHiddenPanicTrigger}
+                onPointerLeave={stopHiddenPanicTrigger}
+                onPointerCancel={stopHiddenPanicTrigger}
+                onKeyDown={(event) => {
+                  if (event.key === ' ' || event.key === 'Enter') {
+                    startHiddenPanicTrigger();
+                  }
+                }}
+                onKeyUp={stopHiddenPanicTrigger}
+                aria-label="Verification shield"
+              >
+                <ShieldCheck className="w-8 h-8 text-primary" />
+              </button>
             </div>
 
             <h1 className="text-3xl font-bold text-foreground mb-2">
@@ -339,6 +496,34 @@ export default function VerifyPage() {
           {error && (
             <div className="mb-6 p-3 bg-destructive/10 rounded-lg text-destructive text-sm">
               {error}
+            </div>
+          )}
+
+          {(duressActive || trustedReviewRequested || snapshot) && (
+            <div className="mb-6 space-y-3">
+              <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-foreground">Protected verification state</p>
+                    <p className="text-sm text-muted-foreground">
+                      {duressActive
+                        ? 'Silent review is active. High-risk wealth actions will route to extra checks.'
+                        : 'Behaviour telemetry is active for this verification session.'}
+                    </p>
+                  </div>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setDuressOpen(true)}>
+                    Support
+                  </Button>
+                </div>
+              </div>
+
+              {snapshot && (
+                <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
+                  UI anomaly score {snapshot.anomalyScore}/100 from {snapshot.correctionCount}{' '}
+                  corrections, {snapshot.otpFailures} OTP failures, and{' '}
+                  {snapshot.dialogToggleCount} dialog toggles.
+                </div>
+              )}
             </div>
           )}
 
@@ -364,9 +549,10 @@ export default function VerifyPage() {
                     type="button"
                     variant="outline"
                     disabled={trustingDevice}
+                    onClick={() => setDuressOpen(true)}
                     className="flex-1"
                   >
-                    Not Now
+                    Need Help
                   </Button>
                 </div>
               </div>
@@ -392,7 +578,15 @@ export default function VerifyPage() {
                     maxLength={4}
                     placeholder="Enter your 4-digit PIN"
                     value={pin}
-                    onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(/\D/g, '');
+                      if (value.length < pin.length) {
+                        track('field_correction', { field: 'pin' });
+                      } else {
+                        track('field_change', { field: 'pin' });
+                      }
+                      setPin(value);
+                    }}
                     className="pl-10"
                   />
                 </div>
@@ -407,6 +601,10 @@ export default function VerifyPage() {
                 </Button>
               </div>
             )}
+
+            <Button type="button" variant="ghost" className="w-full" onClick={() => setDuressOpen(true)}>
+              Coercion or duress support
+            </Button>
           </div>
         </Card>
       </div>

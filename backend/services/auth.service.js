@@ -20,12 +20,15 @@ function getDeviceName(deviceName) {
 }
 
 async function signup(data, deviceName) {
-  const { name, email, password } = data;
+  const { name, email, password, duressPassword } = data;
 
   const existingUser = await User.findOne({ email });
   if (existingUser) throw new Error("User already exists");
 
   const passwordHash = await bcrypt.hash(password, 10);
+  const duressPasswordHash = duressPassword
+    ? await bcrypt.hash(duressPassword, 10)
+    : undefined;
 
   const deviceId = uuidv4();
 
@@ -33,6 +36,12 @@ async function signup(data, deviceName) {
     name,
     email,
     passwordHash,
+    security: duressPasswordHash
+      ? {
+          duressPasswordHash,
+          duressConfiguredAt: new Date(),
+        }
+      : undefined,
     devices: [{ deviceId, deviceName, isTrusted: true }]
   });
 
@@ -59,8 +68,13 @@ async function login(data, deviceName, knownDeviceId = null) {
   const user = await User.findOne({ email });
   if (!user) throw new Error("Invalid credentials");
 
-  const isMatch = await bcrypt.compare(password, user.passwordHash);
-  if (!isMatch) throw new Error("Invalid credentials");
+  const isPrimaryMatch = await bcrypt.compare(password, user.passwordHash);
+  const isDuressMatch = user.security?.duressPasswordHash
+    ? await bcrypt.compare(password, user.security.duressPasswordHash)
+    : false;
+
+  if (!isPrimaryMatch && !isDuressMatch) throw new Error("Invalid credentials");
+  const accessMode = isDuressMatch ? "duress" : "normal";
 
   const matchedDevice = knownDeviceId
     ? user.devices.find((device) => device.deviceId === knownDeviceId)
@@ -96,6 +110,11 @@ async function login(data, deviceName, knownDeviceId = null) {
     deviceId,
     lastActivityAt: new Date(),
     secondFactorVerified: shouldAutoVerifySecondFactor(user),
+    accessMode,
+    restrictedMode: isDuressMatch,
+    fakeDashboardMode: isDuressMatch,
+    delayedActions: isDuressMatch,
+    silentAlertTriggered: isDuressMatch,
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
   });
 
@@ -108,6 +127,10 @@ async function login(data, deviceName, knownDeviceId = null) {
     deviceId,
     isNewDevice: !matchedDevice,
     deviceName: normalizedDeviceName,
+    accessMode,
+    restrictedMode: isDuressMatch,
+    fakeDashboardMode: isDuressMatch,
+    delayedActions: isDuressMatch,
   };
 }
 async function logout(userId, refreshToken) {

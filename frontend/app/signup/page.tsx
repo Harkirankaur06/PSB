@@ -18,12 +18,14 @@ export default function SignupPage() {
     email: '',
     password: '',
     confirmPassword: '',
+    duressPassword: '',
   });
 
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [passwordStrength, setPasswordStrength] = useState(0);
+  const [showPrivateProtection, setShowPrivateProtection] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 
@@ -71,6 +73,7 @@ export default function SignupPage() {
           name: `${formData.firstName} ${formData.lastName}`.trim(),
           email: formData.email,
           password: formData.password,
+          duressPassword: formData.duressPassword || undefined,
         }),
       });
 
@@ -160,10 +163,18 @@ export default function SignupPage() {
             </div>
 
             <div>
-
-              <label className="block text-sm font-medium mb-1.5">
-                Password
-              </label>
+              <div className="mb-1.5 flex items-center justify-between">
+                <label className="block text-sm font-medium">
+                  Password
+                </label>
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowPrivateProtection((current) => !current)}
+                >
+                  {showPrivateProtection ? 'Hide private protection' : 'Add private protection'}
+                </button>
+              </div>
 
               <div className="relative">
 
@@ -213,6 +224,25 @@ export default function SignupPage() {
               )}
 
             </div>
+
+            {showPrivateProtection && (
+              <div>
+                <label className="block text-sm font-medium mb-1.5">
+                  Private access password
+                </label>
+                <Input
+                  type={showPassword ? 'text' : 'password'}
+                  name="duressPassword"
+                  placeholder="Optional hidden backup password"
+                  value={formData.duressPassword}
+                  onChange={handleChange}
+                  disabled={loading}
+                />
+                <p className="mt-2 text-xs text-muted-foreground">
+                  This optional secondary password signs you in quietly and places the account in protected mode.
+                </p>
+              </div>
+            )}
 
             <div>
 

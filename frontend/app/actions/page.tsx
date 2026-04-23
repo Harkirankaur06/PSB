@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useAppOverview, useFormattedCurrency } from '@/lib/app-data';
 import Link from 'next/link';
+import { getBehaviorSnapshot, getDuressProtectionState } from '@/lib/behavior-monitor';
 
 const statusConfig = {
   pending: { icon: AlertCircle, color: 'text-warning', bg: 'bg-warning/10' },
@@ -57,6 +58,11 @@ export default function ActionCenterPage() {
   }
 
   const totalPotentialValue = data.actions.reduce((sum, item) => sum + item.value, 0);
+  const behaviorSnapshot = getBehaviorSnapshot();
+  const duressActive =
+    data.cyber.securityStatus.accessMode === 'duress' ||
+    data.cyber.securityStatus.restrictedMode ||
+    getDuressProtectionState();
 
   return (
     <MainLayout>
@@ -85,6 +91,17 @@ export default function ActionCenterPage() {
             </Button>
           </div>
         </Card>
+
+        {(duressActive || behaviorSnapshot.anomalyScore >= 30) && (
+          <Card className="border-warning/30 bg-warning/5 p-5">
+            <p className="text-sm font-semibold text-foreground">Protected action posture</p>
+            <p className="text-sm text-muted-foreground">
+              {duressActive
+                ? 'Silent review mode is active, so high-risk actions should be slowed or re-routed.'
+                : `UI behaviour anomaly score is ${behaviorSnapshot.anomalyScore}/100, so extra checks are recommended before sensitive actions.`}
+            </p>
+          </Card>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card className="p-4">
@@ -149,12 +166,14 @@ export default function ActionCenterPage() {
                     )}
 
                     <div className="flex gap-2">
-                      <Button size="sm" className="gap-2">
-                        Take Action
-                        <ArrowRight className="h-4 w-4" />
+                      <Button size="sm" className="gap-2" asChild>
+                        <Link href={duressActive ? '/verify' : action.actionPath}>
+                          {duressActive ? 'Protected Review' : 'Take Action'}
+                          <ArrowRight className="h-4 w-4" />
+                        </Link>
                       </Button>
-                      <Button size="sm" variant="outline">
-                        Linked page {action.actionPath}
+                      <Button size="sm" variant="outline" asChild>
+                        <Link href={action.actionPath}>Linked page {action.actionPath}</Link>
                       </Button>
                     </div>
                   </div>

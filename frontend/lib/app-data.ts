@@ -140,6 +140,11 @@ export interface AppOverview {
       secondFactorVerified: boolean;
       needsSetup: boolean;
       requiresVerification: boolean;
+      accessMode?: 'normal' | 'duress';
+      restrictedMode?: boolean;
+      fakeDashboardMode?: boolean;
+      delayedActions?: boolean;
+      hasDuressPassword?: boolean;
     };
   };
   contacts: AppContact[];
@@ -222,6 +227,11 @@ export interface HeaderData {
       secondFactorVerified: boolean;
       needsSetup: boolean;
       requiresVerification: boolean;
+      accessMode?: 'normal' | 'duress';
+      restrictedMode?: boolean;
+      fakeDashboardMode?: boolean;
+      delayedActions?: boolean;
+      hasDuressPassword?: boolean;
     };
   };
   notifications: Array<{

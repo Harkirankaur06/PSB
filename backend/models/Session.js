@@ -28,6 +28,32 @@ const sessionSchema = new mongoose.Schema(
       default: false,
     },
 
+    accessMode: {
+      type: String,
+      enum: ["normal", "duress"],
+      default: "normal",
+    },
+
+    restrictedMode: {
+      type: Boolean,
+      default: false,
+    },
+
+    fakeDashboardMode: {
+      type: Boolean,
+      default: false,
+    },
+
+    delayedActions: {
+      type: Boolean,
+      default: false,
+    },
+
+    silentAlertTriggered: {
+      type: Boolean,
+      default: false,
+    },
+
     currentChallenge: {
       type: String,
       default: null,

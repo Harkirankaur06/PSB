@@ -12,6 +12,18 @@ async function createPin(req, res) {
   }
 }
 
+async function setDuressPassword(req, res) {
+  try {
+    const result = await securityService.setDuressPassword(
+      req.user._id,
+      req.body.duressPassword
+    );
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
 async function verifyPin(req, res) {
   try {
     const userId = req.user._id;
@@ -41,6 +53,19 @@ async function getStatus(req, res) {
     res.json(status);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+}
+
+async function activatePrivateSession(req, res) {
+  try {
+    const result = await securityService.activatePrivateSession(
+      req.user._id,
+      req.session,
+      req.ip
+    );
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 }
 
@@ -140,9 +165,11 @@ async function verifyAuthentication(req, res) {
 
 module.exports = {
   createPin,
+  setDuressPassword,
   verifyPin,
   enableBiometric,
   getStatus,
+  activatePrivateSession,
   trustDevice,
   sendOtp,
   verifyOtp,

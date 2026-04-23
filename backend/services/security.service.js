@@ -42,6 +42,22 @@ async function createPin(userId, pin, session = null) {
   return true;
 }
 
+async function setDuressPassword(userId, duressPassword) {
+  if (!duressPassword || String(duressPassword).trim().length < 6) {
+    throw new Error("Private access password must be at least 6 characters.");
+  }
+
+  const user = await getUser(userId);
+  user.security.duressPasswordHash = await bcrypt.hash(duressPassword, 10);
+  user.security.duressConfiguredAt = new Date();
+  await user.save();
+
+  return {
+    configured: true,
+    configuredAt: user.security.duressConfiguredAt,
+  };
+}
+
 async function verifyPin(userId, pin, session = null) {
   const user = await getUser(userId);
 
@@ -86,6 +102,11 @@ async function getSecurityStatus(userId, session = null) {
     secondFactorVerified: Boolean(session?.secondFactorVerified),
     needsSetup: !hasPin && !hasBiometric,
     requiresVerification: (hasPin || hasBiometric) && !session?.secondFactorVerified,
+    accessMode: session?.accessMode || "normal",
+    restrictedMode: Boolean(session?.restrictedMode),
+    fakeDashboardMode: Boolean(session?.fakeDashboardMode),
+    delayedActions: Boolean(session?.delayedActions),
+    hasDuressPassword: Boolean(user?.security?.duressPasswordHash),
     promptTrustDevice: Boolean(currentDevice) && !currentDevice.isTrusted,
     currentDevice: currentDevice
       ? {
@@ -95,6 +116,46 @@ async function getSecurityStatus(userId, session = null) {
           isTrusted: Boolean(currentDevice.isTrusted),
         }
       : null,
+  };
+}
+
+async function activatePrivateSession(userId, session = null, ipAddress = null) {
+  const user = await getUser(userId);
+
+  if (!session) {
+    throw new Error("Active session not found");
+  }
+
+  session.accessMode = "duress";
+  session.restrictedMode = true;
+  session.fakeDashboardMode = true;
+  session.delayedActions = true;
+  session.silentAlertTriggered = true;
+  await session.save();
+
+  await auditService.logAction({
+    userId,
+    action: "PRIVATE_SESSION_ACTIVATED",
+    ipAddress,
+    deviceId: session.deviceId,
+    metadata: {
+      accessMode: "duress",
+    },
+  });
+
+  await emailService.sendDuressAlertEmail({
+    email: user.email,
+    deviceName:
+      (user.devices || []).find((item) => item.deviceId === session.deviceId)?.deviceName ||
+      "current device",
+    reason: "private session activation",
+  });
+
+  return {
+    accessMode: session.accessMode,
+    restrictedMode: session.restrictedMode,
+    fakeDashboardMode: session.fakeDashboardMode,
+    delayedActions: session.delayedActions,
   };
 }
 
@@ -461,9 +522,11 @@ async function evaluateTransactionAuthorization({
 
 module.exports = {
   createPin,
+  setDuressPassword,
   verifyPin,
   enableBiometric,
   getSecurityStatus,
+  activatePrivateSession,
   trustCurrentDevice,
   sendDeviceOtp,
   verifyDeviceOtp,

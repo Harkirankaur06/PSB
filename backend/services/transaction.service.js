@@ -7,6 +7,7 @@ const securityService = require("./security.service");
 
 async function processTransaction({
   user,
+  session = null,
   type,
   amount,
   deviceId,
@@ -61,6 +62,10 @@ async function processTransaction({
   let finalAction = action;
   let finalCoolingTime = coolingTime;
   let finalFraudFlag = fraudFlag;
+  const duressModeActive =
+    session?.accessMode === "duress" ||
+    session?.restrictedMode ||
+    metadata?.privateProtection === true;
 
   if (!authorizationCheck.allowed) {
     finalRiskScore = Math.max(finalRiskScore, authorizationCheck.requiresStepUp ? 95 : 75);
@@ -83,6 +88,24 @@ async function processTransaction({
     };
   }
 
+  if (duressModeActive) {
+    finalRiskScore = Math.max(finalRiskScore, 88);
+    finalRiskLevel = "HIGH";
+    finalDecision = "warn";
+    finalFraudFlag = true;
+    finalAction = "DELAY_AND_REVIEW";
+    finalCoolingTime = Math.max(finalCoolingTime || 0, 30 * 60 * 1000);
+    finalSignals = [...new Set([...finalSignals, "DURESS_MODE_ACTIVE", "SILENT_REVIEW_MODE"])];
+    finalReasons = [
+      ...finalReasons,
+      "Private protection mode is active, so sensitive transactions are delayed for review.",
+    ];
+    finalExplanation = {
+      summary: "Transaction pending verification under private protection mode.",
+      detailedReasons: finalReasons,
+    };
+  }
+
   transaction.riskScore = finalRiskScore;
   transaction.decision = finalDecision;
   transaction.metadata = {
@@ -97,6 +120,7 @@ async function processTransaction({
       reasons: finalReasons,
       thresholdAmount: authorizationCheck.thresholdAmount,
       authMode: authorizationCheck.authMode || null,
+      duressMode: duressModeActive,
     },
   };
 
@@ -116,7 +140,7 @@ async function processTransaction({
     await transactionQueue.add(
       "delayedTransaction",
       { transactionId: transaction._id },
-      { delay: 10 * 60 * 1000 }
+      { delay: duressModeActive ? 30 * 60 * 1000 : 10 * 60 * 1000 }
     );
   }
 
@@ -135,6 +159,7 @@ async function processTransaction({
       signals: finalSignals,
       thresholdAmount: authorizationCheck.thresholdAmount,
       authMode: authorizationCheck.authMode || null,
+      duressMode: duressModeActive,
     },
   });
 

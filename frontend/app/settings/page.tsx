@@ -1,15 +1,20 @@
 'use client';
 
+import { useState } from 'react';
 import { MainLayout } from '@/components/main-layout';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { User, Lock, Bell, Eye, ChevronRight } from 'lucide-react';
 import { useAppOverview, useFormattedCurrency } from '@/lib/app-data';
+import { apiRequest } from '@/lib/api-client';
 
 export default function SettingsPage() {
   const { data, loading, error } = useAppOverview();
   const formatCurrency = useFormattedCurrency();
+  const [duressPassword, setDuressPassword] = useState('');
+  const [duressStatus, setDuressStatus] = useState('');
+  const [duressLoading, setDuressLoading] = useState(false);
 
   if (loading) {
     return (
@@ -30,6 +35,29 @@ export default function SettingsPage() {
   const nameParts = data.profile.name.split(' ');
   const firstName = nameParts[0] || '';
   const lastName = nameParts.slice(1).join(' ');
+
+  const saveDuressPassword = async () => {
+    if (!duressPassword.trim()) {
+      setDuressStatus('Enter a private access password first.');
+      return;
+    }
+
+    setDuressLoading(true);
+    setDuressStatus('');
+
+    try {
+      await apiRequest('/api/security/duress-password', {
+        method: 'POST',
+        body: JSON.stringify({ duressPassword }),
+      });
+      setDuressPassword('');
+      setDuressStatus('Private access password saved.');
+    } catch (err) {
+      setDuressStatus(err instanceof Error ? err.message : 'Unable to save private access password.');
+    } finally {
+      setDuressLoading(false);
+    }
+  };
 
   return (
     <MainLayout>
@@ -111,6 +139,30 @@ export default function SettingsPage() {
               <Button variant="outline" size="sm">
                 {data.profile.devices.length} devices
               </Button>
+            </div>
+
+            <div className="rounded-lg border border-border bg-muted/30 p-4">
+              <div className="mb-3">
+                <h3 className="font-medium text-foreground">Private access setup</h3>
+                <p className="text-sm text-muted-foreground">
+                  Configure a hidden secondary password that signs in using protected mode.
+                </p>
+              </div>
+              <div className="flex flex-col gap-3 md:flex-row">
+                <Input
+                  type="password"
+                  value={duressPassword}
+                  onChange={(e) => setDuressPassword(e.target.value)}
+                  placeholder="Set private access password"
+                />
+                <Button onClick={saveDuressPassword} disabled={duressLoading}>
+                  {duressLoading ? 'Saving...' : 'Save private password'}
+                </Button>
+              </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                Status: {data.cyber.securityStatus.hasDuressPassword ? 'Configured' : 'Not configured'}
+              </p>
+              {duressStatus && <p className="mt-2 text-xs text-primary">{duressStatus}</p>}
             </div>
           </div>
         </Card>

@@ -19,6 +19,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { AppOverview, AppTransaction, useAppOverview, useFormattedCurrency } from '@/lib/app-data';
+import { getBehaviorSnapshot, getDuressProtectionState } from '@/lib/behavior-monitor';
 
 type RiskLevel = 'low' | 'medium' | 'high';
 type Decision = 'allow' | 'step-up' | 'manual-review' | 'block';
@@ -75,7 +76,13 @@ function getPrimaryAction(data: AppOverview) {
   );
 }
 
-function buildSignals(data: AppOverview, actionValue: number, actionPath: string): TwinSignal[] {
+function buildSignals(
+  data: AppOverview,
+  actionValue: number,
+  actionPath: string,
+  anomalyScore: number,
+  duressActive: boolean
+): TwinSignal[] {
   const warningTransactions = data.transactions.filter(
     (item) => item.status === 'warning' || item.status === 'blocked'
   );
@@ -136,6 +143,26 @@ function buildSignals(data: AppOverview, actionValue: number, actionPath: string
           : 'Behavior looks consistent with previous wealth actions.',
       weight: 20,
       active: warningTransactions.length >= 2,
+    },
+    {
+      id: 'ui-anomaly',
+      title: 'UI-behaviour anomaly tracking',
+      description:
+        anomalyScore >= 30
+          ? 'Rapid retries, corrections, or OTP friction suggest stressed or unusual interaction patterns.'
+          : 'Current session telemetry looks calm and consistent.',
+      weight: 18,
+      active: anomalyScore >= 30,
+    },
+    {
+      id: 'duress',
+      title: 'Coercion or duress protection',
+      description:
+        duressActive
+          ? 'Silent review mode is active, so critical actions should be routed to extra review.'
+          : 'No duress signal has been raised for this session.',
+      weight: 28,
+      active: duressActive,
     },
   ];
 }
@@ -241,7 +268,18 @@ export default function SecureWealthTwinPage() {
   const primaryAction = getPrimaryAction(data);
   const twinSummary = getTwinSummary(data);
   const riskAppetite = getRiskAppetite(data);
-  const signals = buildSignals(data, primaryAction.value, primaryAction.actionPath);
+  const behaviorSnapshot = getBehaviorSnapshot();
+  const duressActive =
+    data.cyber.securityStatus.accessMode === 'duress' ||
+    data.cyber.securityStatus.restrictedMode ||
+    getDuressProtectionState();
+  const signals = buildSignals(
+    data,
+    primaryAction.value,
+    primaryAction.actionPath,
+    behaviorSnapshot.anomalyScore,
+    duressActive
+  );
   const score = signals.reduce((sum, signal) => sum + (signal.active ? signal.weight : 0), 0);
   const riskLevel = getRiskLevel(score);
   const decision = getDecision(score);
@@ -294,6 +332,36 @@ export default function SecureWealthTwinPage() {
           </div>
         </div>
       </section>
+
+      {(duressActive || behaviorSnapshot.totalEvents > 0) && (
+        <section className="grid gap-6 lg:grid-cols-[1fr_1fr]">
+          <Card className="border-warning/30 bg-warning/5 p-5">
+            <p className="text-xs uppercase tracking-wide text-warning">Coercion shield</p>
+            <h2 className="mt-2 text-lg font-semibold text-foreground">
+              {duressActive ? 'Silent review mode is active' : 'No active duress signal'}
+            </h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {duressActive
+                ? 'The next sensitive wealth action should pause for extra verification or trusted-contact review.'
+                : 'Customers can quietly request silent review from login or verification if they are under pressure.'}
+            </p>
+          </Card>
+
+          <Card className="p-5">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              UI anomaly telemetry
+            </p>
+            <h2 className="mt-2 text-lg font-semibold text-foreground">
+              Session anomaly score {behaviorSnapshot.anomalyScore}/100
+            </h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {behaviorSnapshot.correctionCount} corrections, {behaviorSnapshot.submitFailures}{' '}
+              submit failures, {behaviorSnapshot.otpFailures} OTP failures, and{' '}
+              {behaviorSnapshot.dialogToggleCount} dialog toggles are feeding the Twin.
+            </p>
+          </Card>
+        </section>
+      )}
 
       <section className="grid gap-6 lg:grid-cols-[1.25fr_0.95fr]">
         <Card className="p-6">

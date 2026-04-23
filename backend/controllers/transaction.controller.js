@@ -10,6 +10,7 @@ async function handleTransaction(req, res, forcedType) {
 
     const result = await transactionService.processTransaction({
       user: req.user,
+      session: req.session,
       type,
       amount,
       deviceId,

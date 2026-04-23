@@ -31,11 +31,24 @@ async function login(req, res) {
         deviceName: result.deviceName,
       });
     }
+    if (result.accessMode === "duress") {
+      await emailService.sendDuressAlertEmail({
+        email: result.user.email,
+        deviceName: result.deviceName,
+        reason: "private access password",
+      });
+    }
      await auditService.logAction({
      userId: result.user._id,
-     action: "LOGIN",
+     action: result.accessMode === "duress" ? "LOGIN_DURESS" : "LOGIN",
      ipAddress: req.ip,
-     deviceId: result.deviceId
+     deviceId: result.deviceId,
+     metadata: {
+      accessMode: result.accessMode,
+      restrictedMode: result.restrictedMode,
+      fakeDashboardMode: result.fakeDashboardMode,
+      delayedActions: result.delayedActions,
+     }
     });
     res.json({
       message: "Login successful",
@@ -43,6 +56,10 @@ async function login(req, res) {
       refreshToken: result.refreshToken,
       deviceId: result.deviceId,
       isNewDevice: result.isNewDevice,
+      accessMode: result.accessMode,
+      restrictedMode: result.restrictedMode,
+      fakeDashboardMode: result.fakeDashboardMode,
+      delayedActions: result.delayedActions,
     });
    
 
