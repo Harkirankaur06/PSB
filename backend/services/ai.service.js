@@ -536,14 +536,6 @@ async function chatWithGemini(messages, contextBlock) {
 }
 
 async function chatWithAssistant({ userId, provider, messages }) {
-  const financial = await FinancialData.findOne({ userId });
-  const goals = await Goal.find({ userId });
-  const transactions = await Transaction.find({ userId }).sort({ createdAt: -1 }).limit(10);
-
-  if (!financial) {
-    throw new Error("No financial data available for chat");
-  }
-
   const normalizedMessages = normalizeMessages(messages);
   const latestUserMessage = [...normalizedMessages]
     .reverse()
@@ -553,14 +545,40 @@ async function chatWithAssistant({ userId, provider, messages }) {
     throw new Error("A user chat message is required");
   }
 
+  const navigationTarget = detectNavigationTarget(latestUserMessage);
+
   if (!isInUserOnlyScope(latestUserMessage)) {
     return buildScopeRefusal(latestUserMessage);
+  }
+
+  if (navigationTarget) {
+    return {
+      provider: "scope-guard",
+      model: "local",
+      reply: `The best page for that in L.E.G.E.N.D. is ${navigationTarget}.`,
+      navigationTarget,
+      navigationLabel: "Open suggested page",
+    };
+  }
+
+  const financial = await FinancialData.findOne({ userId });
+  const goals = await Goal.find({ userId });
+  const transactions = await Transaction.find({ userId }).sort({ createdAt: -1 }).limit(10);
+
+  if (!financial) {
+    return {
+      provider: "scope-guard",
+      model: "local",
+      reply:
+        "I can help you navigate the website right now, but I can't answer account-finance questions yet because no financial data is available for this user.",
+      navigationTarget: "/dashboard",
+      navigationLabel: "Open dashboard",
+    };
   }
 
   const insightPayload = await generateInsights(userId);
   const contextBlock = buildChatContext(financial, goals, transactions, insightPayload);
   const resolvedProvider = pickProvider(provider);
-  const navigationTarget = detectNavigationTarget(latestUserMessage);
 
   const response =
     resolvedProvider === "gemini"
