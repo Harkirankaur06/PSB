@@ -15,7 +15,7 @@ const otpTokenSchema = new mongoose.Schema(
     },
     purpose: {
       type: String,
-      enum: ["new_device_login", "transaction_verification"],
+      enum: ["new_device_login", "transaction_verification", "duress_clearance"],
       required: true,
       default: "new_device_login",
     },

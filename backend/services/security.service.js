@@ -302,6 +302,160 @@ async function verifyDeviceOtp(userId, session = null, otp, ipAddress = null) {
   };
 }
 
+async function sendDuressResolutionOtp(userId, session = null, ipAddress = null) {
+  const user = await getUser(userId);
+
+  if (!session?.deviceId) {
+    throw new Error("Current session device not found");
+  }
+
+  if (session.accessMode !== "duress" && !session.restrictedMode) {
+    throw new Error("Protected session is not active");
+  }
+
+  const device = (user.devices || []).find((item) => item.deviceId === session.deviceId);
+  const otp = generateOtpCode();
+  const otpHash = await bcrypt.hash(otp, 10);
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+  await OtpToken.findOneAndUpdate(
+    {
+      userId,
+      deviceId: session.deviceId,
+      purpose: "duress_clearance",
+    },
+    {
+      userId,
+      deviceId: session.deviceId,
+      purpose: "duress_clearance",
+      otpHash,
+      expiresAt,
+      consumedAt: null,
+      attempts: 0,
+    },
+    { upsert: true, new: true }
+  );
+
+  const emailResult = await emailService.sendOtpEmail({
+    email: user.email,
+    otp,
+    deviceName: device?.deviceName || "current device",
+  });
+
+  await auditService.logAction({
+    userId,
+    action: "DURESS_RESOLUTION_OTP_SENT",
+    ipAddress,
+    deviceId: session.deviceId,
+    metadata: {
+      purpose: "duress_clearance",
+      deliveryMode: emailResult.mode,
+    },
+  });
+
+  return {
+    sent: true,
+    expiresAt,
+    deliveryMode: emailResult.mode,
+  };
+}
+
+async function resolvePrivateSession(
+  userId,
+  session = null,
+  { duressPassword, pin, otp },
+  ipAddress = null
+) {
+  const user = await getUser(userId);
+
+  if (!session) {
+    throw new Error("Active session not found");
+  }
+
+  if (session.accessMode !== "duress" && !session.restrictedMode) {
+    throw new Error("Protected session is not active");
+  }
+
+  if (!user.security?.duressPasswordHash) {
+    throw new Error("Private access password is not configured");
+  }
+
+  if (!duressPassword || !pin || !otp) {
+    throw new Error("Private password, PIN, and OTP are required");
+  }
+
+  const duressPasswordValid = await bcrypt.compare(
+    String(duressPassword),
+    user.security.duressPasswordHash
+  );
+
+  if (!duressPasswordValid) {
+    throw new Error("Private access password is incorrect");
+  }
+
+  const pinValid = await verifyPin(userId, String(pin));
+
+  if (!pinValid) {
+    throw new Error("PIN is incorrect");
+  }
+
+  const record = await OtpToken.findOne({
+    userId,
+    deviceId: session.deviceId,
+    purpose: "duress_clearance",
+  });
+
+  if (!record) {
+    throw new Error("Request an OTP before ending protected mode");
+  }
+
+  if (record.consumedAt) {
+    throw new Error("OTP has already been used");
+  }
+
+  if (record.expiresAt.getTime() < Date.now()) {
+    throw new Error("OTP has expired");
+  }
+
+  record.attempts += 1;
+  const otpValid = await bcrypt.compare(String(otp), record.otpHash);
+
+  if (!otpValid) {
+    await record.save();
+    throw new Error("Invalid OTP");
+  }
+
+  record.consumedAt = new Date();
+  await record.save();
+
+  session.accessMode = "normal";
+  session.restrictedMode = false;
+  session.fakeDashboardMode = false;
+  session.delayedActions = false;
+  session.silentAlertTriggered = false;
+  session.secondFactorVerified = true;
+  await session.save();
+
+  await auditService.logAction({
+    userId,
+    action: "PRIVATE_SESSION_RESOLVED",
+    ipAddress,
+    deviceId: session.deviceId,
+    metadata: {
+      accessMode: "normal",
+      authMode: "duress_password+pin+otp",
+    },
+  });
+
+  return {
+    resolved: true,
+    accessMode: session.accessMode,
+    restrictedMode: session.restrictedMode,
+    fakeDashboardMode: session.fakeDashboardMode,
+    delayedActions: session.delayedActions,
+  };
+}
+
 async function generateBiometricRegistrationOptions(userId, session, originHeader) {
   const user = await getUser(userId);
   const { rpID } = getOriginConfig(originHeader);
@@ -530,6 +684,8 @@ module.exports = {
   trustCurrentDevice,
   sendDeviceOtp,
   verifyDeviceOtp,
+  sendDuressResolutionOtp,
+  resolvePrivateSession,
   generateBiometricRegistrationOptions,
   verifyBiometricRegistration,
   generateBiometricAuthenticationOptions,

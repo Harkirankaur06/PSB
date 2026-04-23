@@ -11,5 +11,5 @@ export default function ProtectionLayout({
 }: {
   children: ReactNode;
 }) {
-  return <MainLayout>{children}</MainLayout>;
+  return <>{children}</>;
 }

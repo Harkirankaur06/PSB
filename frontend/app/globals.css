@@ -135,3 +135,18 @@
     @apply bg-background text-foreground;
   }
 }
+
+.duress-readonly :is(button, a[href], input, textarea, select, [role='button']) {
+  pointer-events: none;
+  opacity: 0.5;
+  filter: saturate(0.45);
+  cursor: not-allowed;
+}
+
+.duress-readonly [data-duress-allow='true'],
+.duress-readonly [data-duress-allow='true'] * {
+  pointer-events: auto !important;
+  opacity: 1 !important;
+  filter: none !important;
+  cursor: auto !important;
+}

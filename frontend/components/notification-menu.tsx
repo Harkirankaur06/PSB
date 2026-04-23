@@ -35,6 +35,7 @@ export function NotificationMenu() {
         variant="ghost"
         className="text-muted-foreground hover:text-foreground relative"
         onClick={() => setIsOpen(!isOpen)}
+        data-tour-id="notifications"
       >
         <Bell className="h-5 w-5" />
         {unreadCount > 0 && (

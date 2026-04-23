@@ -105,6 +105,33 @@ async function verifyOtp(req, res) {
   }
 }
 
+async function sendDuressResolutionOtp(req, res) {
+  try {
+    const result = await securityService.sendDuressResolutionOtp(
+      req.user._id,
+      req.session,
+      req.ip
+    );
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
+async function resolvePrivateSession(req, res) {
+  try {
+    const result = await securityService.resolvePrivateSession(
+      req.user._id,
+      req.session,
+      req.body,
+      req.ip
+    );
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
 async function getRegistrationOptions(req, res) {
   try {
     const options = await securityService.generateBiometricRegistrationOptions(
@@ -173,6 +200,8 @@ module.exports = {
   trustDevice,
   sendOtp,
   verifyOtp,
+  sendDuressResolutionOtp,
+  resolvePrivateSession,
   getRegistrationOptions,
   verifyRegistration,
   getAuthenticationOptions,

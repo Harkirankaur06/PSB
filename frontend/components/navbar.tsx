@@ -15,7 +15,7 @@ export function Navbar() {
     <nav className="fixed top-0 right-0 left-0 z-40 border-b border-border bg-card">
       <div className="flex h-16 items-center justify-between px-6">
         <div className="flex items-center gap-8">
-          <Link href="/dashboard">
+          <Link href="/dashboard" data-tour-id="brand">
             <h1 className="text-xl font-semibold text-primary hover:text-primary/90 transition-colors cursor-pointer">L.E.G.E.N.D.</h1>
           </Link>
           <div className="hidden md:flex items-center gap-1">

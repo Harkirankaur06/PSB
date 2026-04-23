@@ -46,6 +46,7 @@ export function ProfileMenu() {
         variant="ghost"
         className="text-muted-foreground hover:text-foreground"
         onClick={() => setIsOpen(!isOpen)}
+        data-tour-id="profile-menu"
       >
         <div className="w-5 h-5 rounded-full bg-secondary flex items-center justify-center">
           <User className="h-3 w-3 text-secondary-foreground" />

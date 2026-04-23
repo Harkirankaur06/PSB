@@ -8,13 +8,21 @@ import { Input } from '@/components/ui/input';
 import { User, Lock, Bell, Eye, ChevronRight } from 'lucide-react';
 import { useAppOverview, useFormattedCurrency } from '@/lib/app-data';
 import { apiRequest } from '@/lib/api-client';
+import { useSessionSecurity } from '@/lib/session-security';
 
 export default function SettingsPage() {
   const { data, loading, error } = useAppOverview();
   const formatCurrency = useFormattedCurrency();
+  const { duressActive, refreshStatus } = useSessionSecurity();
   const [duressPassword, setDuressPassword] = useState('');
   const [duressStatus, setDuressStatus] = useState('');
   const [duressLoading, setDuressLoading] = useState(false);
+  const [resolvePassword, setResolvePassword] = useState('');
+  const [resolvePin, setResolvePin] = useState('');
+  const [resolveOtp, setResolveOtp] = useState('');
+  const [resolveStatus, setResolveStatus] = useState('');
+  const [resolveOtpLoading, setResolveOtpLoading] = useState(false);
+  const [resolveLoading, setResolveLoading] = useState(false);
 
   if (loading) {
     return (
@@ -56,6 +64,71 @@ export default function SettingsPage() {
       setDuressStatus(err instanceof Error ? err.message : 'Unable to save private access password.');
     } finally {
       setDuressLoading(false);
+    }
+  };
+
+  const startProductTour = () => {
+    window.localStorage.removeItem('legend.appTourComplete');
+    window.dispatchEvent(new Event('legend-tour:start'));
+  };
+
+  const sendResolveOtp = async () => {
+    setResolveOtpLoading(true);
+    setResolveStatus('');
+
+    try {
+      const response = await apiRequest<{ deliveryMode: string; expiresAt: string }>(
+        '/api/security/duress-resolution/send-otp',
+        {
+          method: 'POST',
+        }
+      );
+
+      setResolveStatus(
+        response.deliveryMode === 'smtp'
+          ? 'OTP sent to your registered email.'
+          : 'OTP generated. Email is in fallback mode, so check backend logs if needed.'
+      );
+    } catch (err) {
+      setResolveStatus(
+        err instanceof Error ? err.message : 'Unable to send the protected-mode OTP.'
+      );
+    } finally {
+      setResolveOtpLoading(false);
+    }
+  };
+
+  const resolveDuressSession = async () => {
+    if (!resolvePassword.trim() || resolvePin.length !== 4 || resolveOtp.length !== 6) {
+      setResolveStatus('Enter the private password, 4-digit PIN, and 6-digit OTP first.');
+      return;
+    }
+
+    setResolveLoading(true);
+    setResolveStatus('');
+
+    try {
+      await apiRequest('/api/security/duress-resolution/resolve', {
+        method: 'POST',
+        body: JSON.stringify({
+          duressPassword: resolvePassword,
+          pin: resolvePin,
+          otp: resolveOtp,
+        }),
+      });
+
+      setResolvePassword('');
+      setResolvePin('');
+      setResolveOtp('');
+      await refreshStatus();
+      window.dispatchEvent(new Event('legend-security-refresh'));
+      setResolveStatus('Protected mode cleared. Full account functionality has been restored.');
+    } catch (err) {
+      setResolveStatus(
+        err instanceof Error ? err.message : 'Unable to exit protected mode right now.'
+      );
+    } finally {
+      setResolveLoading(false);
     }
   };
 
@@ -246,6 +319,83 @@ export default function SettingsPage() {
               <span>Delete Account</span>
               <ChevronRight className="h-4 w-4" />
             </Button>
+          </div>
+
+          <div className="mt-6 rounded-xl border border-border bg-background/70 p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h3 className="font-medium text-foreground">Product Tour</h3>
+                <p className="text-sm text-muted-foreground">
+                  Replay the guided walk-through for navigation, alerts, and safety controls.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                onClick={startProductTour}
+                data-duress-allow="true"
+              >
+                Start Tour
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-warning/30 bg-warning/5 p-4">
+            <div className="mb-4">
+              <h3 className="font-medium text-foreground">Protected Mode Recovery</h3>
+              <p className="text-sm text-muted-foreground">
+                {duressActive
+                  ? 'Use this only after the duress event is over. Confirm private password, PIN, and OTP to restore full access.'
+                  : 'Protected mode is currently inactive. This recovery flow stays ready in case you need it later.'}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <Input
+                type="password"
+                value={resolvePassword}
+                onChange={(e) => setResolvePassword(e.target.value)}
+                placeholder="Private password"
+                data-duress-allow="true"
+              />
+              <Input
+                type="password"
+                inputMode="numeric"
+                maxLength={4}
+                value={resolvePin}
+                onChange={(e) => setResolvePin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                placeholder="4-digit PIN"
+                data-duress-allow="true"
+              />
+              <Input
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                value={resolveOtp}
+                onChange={(e) => setResolveOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="6-digit OTP"
+                data-duress-allow="true"
+              />
+            </div>
+
+            <div className="mt-4 flex flex-col gap-3 md:flex-row">
+              <Button
+                variant="outline"
+                onClick={sendResolveOtp}
+                disabled={!duressActive || resolveOtpLoading}
+                data-duress-allow="true"
+              >
+                {resolveOtpLoading ? 'Sending OTP...' : 'Send OTP'}
+              </Button>
+              <Button
+                onClick={resolveDuressSession}
+                disabled={!duressActive || resolveLoading}
+                data-duress-allow="true"
+              >
+                {resolveLoading ? 'Restoring access...' : "I'm safe now"}
+              </Button>
+            </div>
+
+            {resolveStatus && <p className="mt-3 text-sm text-foreground">{resolveStatus}</p>}
           </div>
         </Card>
       </div>

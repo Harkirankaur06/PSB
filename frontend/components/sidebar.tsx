@@ -38,7 +38,10 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="fixed left-0 top-16 bottom-0 w-56 border-r border-sidebar-border bg-sidebar pt-6">
+    <aside
+      className="fixed left-0 top-16 bottom-0 w-56 border-r border-sidebar-border bg-sidebar pt-6"
+      data-tour-id="sidebar"
+    >
       <nav className="space-y-1 px-3">
         {menuItems.map((item) => {
           const Icon = item.icon;
@@ -48,6 +51,7 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
+              data-tour-id={item.href === '/settings' ? 'settings-link' : undefined}
               className={cn(
                 'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors',
                 isActive
