@@ -1,0 +1,54 @@
+[
+  {
+    "bankCode": "BANK_A",
+    "bankName": "Punjab & Sind Digital Bank",
+    "displayName": "Bank A Retail Account",
+    "description": "Primary salary and spending account with moderate monthly transactions.",
+    "holderName": "Demo User A",
+    "accountType": "Savings",
+    "ifsc": "PSIB0001021",
+    "accountNumber": "551234567890",
+    "profile": {
+      "monthlyIncome": 92000,
+      "monthlyExpenses": 51000,
+      "savingsBalance": 185000,
+      "investmentValue": 320000,
+      "assetValue": 140000
+    },
+    "transactions": [
+      {
+        "externalId": "BANKA-TXN-001",
+        "type": "transfer",
+        "amount": 4200,
+        "status": "completed",
+        "riskScore": 14,
+        "decision": "allow",
+        "bookedAt": "2026-04-05T08:30:00.000Z",
+        "metadata": {
+          "category": "Bills",
+          "name": "NorthGrid Electricity",
+          "channel": "UPI",
+          "direction": "debit",
+          "merchantCity": "Delhi"
+        }
+      },
+      {
+        "externalId": "BANKA-TXN-002",
+        "type": "sip",
+        "amount": 12000,
+        "status": "completed",
+        "riskScore": 18,
+        "decision": "allow",
+        "bookedAt": "2026-04-08T03:45:00.000Z",
+        "metadata": {
+          "category": "Investment",
+          "name": "Bluechip SIP AutoPay",
+          "channel": "Auto-Debit",
+          "direction": "debit",
+          "merchantCity": "Mumbai"
+        }
+      }
+    ],
+    "active": true
+  }
+]

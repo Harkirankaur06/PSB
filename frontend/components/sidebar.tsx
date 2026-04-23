@@ -12,7 +12,8 @@ import {
   MoreHorizontal,
   Briefcase,
   TrendingUp,
-  ScanSearch
+  ScanSearch,
+  Landmark
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -79,6 +80,12 @@ const menuItems = [
     label: 'Security Timeline',
     href: '/security',
     description: 'Review trust signals, verification status, and security events affecting this account.',
+  },
+  {
+    icon: Landmark,
+    label: 'Bank Connections',
+    href: '/banks',
+    description: 'Link up to three dummy bank accounts and sync their balances and transactions into L.E.G.E.N.D.',
   },
   {
     icon: Users,

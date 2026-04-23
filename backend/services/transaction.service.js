@@ -4,6 +4,8 @@ const { calculateRisk } = require("../modules/cyber/cyber.service");
 const auditService = require("./audit.service");
 const financialService = require("./financial.service");
 const securityService = require("./security.service");
+const User = require("../models/User");
+const { generateSeededTransactions } = require("../mock/fakeBankData");
 
 async function processTransaction({
   user,
@@ -194,6 +196,18 @@ async function processTransaction({
 }
 
 async function getTransactionHistory(userId, limit = null) {
+  const existingCount = await Transaction.countDocuments({ userId });
+
+  if (existingCount === 0) {
+    const user = await User.findById(userId);
+
+    if (user) {
+      const financial = await financialService.getFinancialData(userId);
+      const seededTransactions = generateSeededTransactions({ user, financial });
+      await Transaction.insertMany(seededTransactions);
+    }
+  }
+
   const query = Transaction.find({ userId }).sort({ createdAt: -1 });
 
   if (limit) {

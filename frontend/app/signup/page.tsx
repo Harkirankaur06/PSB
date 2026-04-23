@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -19,6 +20,7 @@ export default function SignupPage() {
     password: '',
     confirmPassword: '',
     duressPassword: '',
+    initialBankDatasetId: '',
   });
 
   const [showPassword, setShowPassword] = useState(false);
@@ -26,6 +28,51 @@ export default function SignupPage() {
   const [error, setError] = useState('');
   const [passwordStrength, setPasswordStrength] = useState(0);
   const [showPrivateProtection, setShowPrivateProtection] = useState(false);
+  const [bankOptions, setBankOptions] = useState<Array<{
+    id: string;
+    displayName: string;
+    bankName: string;
+    accountNumberMasked: string;
+  }>>([]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadBankCatalog() {
+      try {
+        const response = await apiRequest<Array<{
+          id: string;
+          displayName: string;
+          bankName: string;
+          accountNumberMasked: string;
+        }>>('/api/bank-link/catalog', {
+          auth: false,
+        });
+
+        if (!active) {
+          return;
+        }
+
+        setBankOptions(response);
+        setFormData((prev) => ({
+          ...prev,
+          initialBankDatasetId: prev.initialBankDatasetId || response[0]?.id || '',
+        }));
+      } catch {
+        if (!active) {
+          return;
+        }
+
+        setBankOptions([]);
+      }
+    }
+
+    loadBankCatalog();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 
@@ -74,6 +121,7 @@ export default function SignupPage() {
           email: formData.email,
           password: formData.password,
           duressPassword: formData.duressPassword || undefined,
+          initialBankDatasetId: formData.initialBankDatasetId,
         }),
       });
 
@@ -243,6 +291,33 @@ export default function SignupPage() {
                 </p>
               </div>
             )}
+
+            <div>
+              <label className="block text-sm font-medium mb-1.5">
+                Connect your first bank
+              </label>
+              <select
+                name="initialBankDatasetId"
+                value={formData.initialBankDatasetId}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    initialBankDatasetId: e.target.value,
+                  }))
+                }
+                disabled={loading || bankOptions.length === 0}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs"
+              >
+                {bankOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.displayName} • {option.accountNumberMasked}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-xs text-muted-foreground">
+                New users start with one connected dummy bank. You can add up to 3 later from Bank Connections.
+              </p>
+            </div>
 
             <div>
 

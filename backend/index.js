@@ -11,6 +11,8 @@ const securityRoutes = require("./routes/security.routes");
 const aiRoutes = require("./routes/ai.routes");
 const dashboardRoutes = require("./routes/dashboard.routes");
 const appRoutes = require("./routes/app.routes");
+const bankRoutes = require("./routes/bank.routes");
+const bankConnectionRoutes = require("./routes/bank-connection.routes");
 
 const activityLogger = require("./middleware/activity.middleware");
 
@@ -33,6 +35,8 @@ app.use("/api/security", securityRoutes);
 app.use("/api/ai", aiRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/app", appRoutes);
+app.use("/api/bank", bankRoutes);
+app.use("/api/bank-link", bankConnectionRoutes);
 
 //require("./jobs/transaction.worker");
 

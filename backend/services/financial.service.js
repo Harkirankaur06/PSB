@@ -1,4 +1,6 @@
 const FinancialData = require("../models/FinancialData");
+const User = require("../models/User");
+const { generateFinancialSnapshot } = require("../mock/fakeBankData");
 
 /**
  * Create or Update Financial Data
@@ -17,16 +19,22 @@ async function upsertFinancialData(userId, data) {
  * Get Financial Data
  */
 async function getFinancialData(userId) {
-  const financial = await FinancialData.findOne({ userId });
+  let financial = await FinancialData.findOne({ userId });
 
   if (!financial) {
-    return {
-      income: 0,
-      expenses: 0,
-      savings: 0,
-      assets: 0,
-      investments: 0
-    };
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return {
+        income: 0,
+        expenses: 0,
+        savings: 0,
+        assets: 0,
+        investments: 0
+      };
+    }
+
+    financial = await FinancialData.create(generateFinancialSnapshot(user));
   }
 
   return financial;

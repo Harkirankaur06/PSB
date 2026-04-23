@@ -3,6 +3,8 @@ const { v4: uuidv4 } = require("uuid");
 const User = require("../models/User");
 const Session = require("../models/Session");
 const { startSession } = require("../modules/cyber/sessionTracker");
+const bankConnectionService = require("./bank-connection.service");
+const DummyBankDataset = require("../models/DummyBankDataset");
 
 const {
   generateAccessToken,
@@ -20,10 +22,21 @@ function getDeviceName(deviceName) {
 }
 
 async function signup(data, deviceName) {
-  const { name, email, password, duressPassword } = data;
+  const { name, email, password, duressPassword, initialBankDatasetId } = data;
 
   const existingUser = await User.findOne({ email });
   if (existingUser) throw new Error("User already exists");
+
+  if (initialBankDatasetId) {
+    const dataset = await DummyBankDataset.findOne({
+      _id: initialBankDatasetId,
+      active: true,
+    });
+
+    if (!dataset) {
+      throw new Error("Selected dummy bank account is not available.");
+    }
+  }
 
   const passwordHash = await bcrypt.hash(password, 10);
   const duressPasswordHash = duressPassword
@@ -58,6 +71,10 @@ async function signup(data, deviceName) {
   });
 
   startSession(String(user._id));
+
+  if (initialBankDatasetId) {
+    await bankConnectionService.connectBankDataset(user._id, initialBankDatasetId);
+  }
 
   return { user, accessToken, refreshToken, deviceId };
 }
