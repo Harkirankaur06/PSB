@@ -276,18 +276,38 @@ const ALLOWED_SCOPE_TERMS = [
   "account",
   "balance",
   "income",
+  "salary",
   "expense",
   "expenses",
+  "budget",
+  "budgeting",
   "saving",
   "savings",
   "goal",
   "goals",
   "portfolio",
+  "asset",
+  "allocation",
+  "diversification",
   "invest",
   "investment",
+  "sip",
+  "mutual fund",
+  "stock",
+  "stocks",
+  "etf",
+  "bond",
+  "returns",
+  "compound",
+  "compounding",
+  "risk",
+  "financial planning",
+  "retirement",
+  "emergency fund",
+  "debt",
+  "loan",
   "transaction",
   "transactions",
-  "risk",
   "security",
   "fraud",
   "pin",
@@ -332,7 +352,7 @@ const BLOCKED_GLOBAL_TERMS = [
   "around the world",
 ];
 
-function isInUserOnlyScope(text) {
+function isInFinanceScope(text) {
   const lower = text.toLowerCase();
   const hasAllowedSignal = ALLOWED_SCOPE_TERMS.some((term) => lower.includes(term));
   const hasBlockedSignal = BLOCKED_GLOBAL_TERMS.some((term) => lower.includes(term));
@@ -353,7 +373,7 @@ function buildScopeRefusal(text) {
     model: "local",
     intent: "OUT_OF_SCOPE",
     reply:
-      "I can only help with your own L.E.G.E.N.D. account, such as your savings, spending, goals, portfolio, transactions, security, and where to do those tasks in this website.",
+      "I can help with personal finance, investing, risk, banking, and how to use L.E.G.E.N.D., but not unrelated topics like politics, sports, entertainment, or general news.",
     actions: [
       {
         type: "NAVIGATE",
@@ -513,7 +533,13 @@ function buildLocalFinancialReply({ financial, goals, insightPayload, latestUser
   const lower = latestUserMessage.toLowerCase();
   const recommendations = insightPayload.recommendations || [];
 
-  if (lower.includes("investment")) {
+  if (
+    lower.includes("investment") ||
+    lower.includes("invest") ||
+    lower.includes("sip") ||
+    lower.includes("mutual fund") ||
+    lower.includes("portfolio")
+  ) {
     const ratio = financial.income > 0 ? (financial.investments / financial.income) * 100 : 0;
     const topRecommendation =
       recommendations.find((item) => item.toLowerCase().includes("sip")) ||
@@ -522,7 +548,7 @@ function buildLocalFinancialReply({ financial, goals, insightPayload, latestUser
 
     return `Your current investment base is ${financial.investments || 0}, which is about ${ratio.toFixed(
       1
-    )}% of monthly income. Based on your profile, the next sensible move is: ${topRecommendation}`;
+    )}% of monthly income. In general, a sensible progression is: build an emergency fund first, invest consistently through diversified instruments, and increase risk only when your cash flow is stable. Based on your profile, the next sensible move is: ${topRecommendation}`;
   }
 
   if (lower.includes("saving") || lower.includes("savings")) {
@@ -556,7 +582,7 @@ async function chatWithAssistant({ userId, provider, messages, currentPage = nul
 
   const classification = classifyIntent(latestUserMessage);
 
-  if (!isInUserOnlyScope(latestUserMessage)) {
+  if (!isInFinanceScope(latestUserMessage)) {
     return buildScopeRefusal(latestUserMessage);
   }
 
