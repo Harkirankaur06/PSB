@@ -18,4 +18,18 @@ async function simulate(req, res) {
   }
 }
 
-module.exports = { getInsights, simulate };
+async function chat(req, res) {
+  try {
+    const result = await aiService.chatWithAssistant({
+      userId: req.user._id,
+      provider: req.body.provider,
+      messages: req.body.messages,
+    });
+
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
+module.exports = { getInsights, simulate, chat };

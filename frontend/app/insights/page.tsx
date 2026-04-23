@@ -1,10 +1,23 @@
 'use client';
 
+import { useState } from 'react';
 import { MainLayout } from '@/components/main-layout';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Brain, AlertTriangle, Zap, Info, ChevronRight, ThumbsUp } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import Link from 'next/link';
+import {
+  Brain,
+  AlertTriangle,
+  Zap,
+  Info,
+  ChevronRight,
+  ThumbsUp,
+  MessageSquare,
+  Send,
+} from 'lucide-react';
 import { AppOverview, useAppOverview } from '@/lib/app-data';
+import { apiRequest } from '@/lib/api-client';
 
 interface Insight {
   id: number;
@@ -13,6 +26,13 @@ interface Insight {
   type: 'ai' | 'warning' | 'opportunity' | 'info';
   impact: 'high' | 'medium' | 'low';
   actionable: boolean;
+}
+
+interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  navigationTarget?: string | null;
+  navigationLabel?: string | null;
 }
 
 const iconMap = {
@@ -111,6 +131,17 @@ function buildInsights(data: AppOverview): Insight[] {
 
 export default function InsightsPage() {
   const { data, loading, error } = useAppOverview();
+  const [provider, setProvider] = useState<'openai' | 'gemini'>('openai');
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatError, setChatError] = useState('');
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      role: 'assistant',
+      content:
+        'Ask about your savings rate, spending, goals, or portfolio posture and I will answer from your current account context.',
+    },
+  ]);
 
   if (loading) {
     return (
@@ -130,6 +161,56 @@ export default function InsightsPage() {
 
   const insightsData = buildInsights(data);
 
+  const handleSendChat = async () => {
+    const trimmed = chatInput.trim();
+
+    if (!trimmed) {
+      return;
+    }
+
+    const nextMessages = [...messages, { role: 'user' as const, content: trimmed }];
+    setMessages(nextMessages);
+    setChatInput('');
+    setChatLoading(true);
+    setChatError('');
+
+    try {
+      const response = await apiRequest<{
+        provider: 'openai' | 'gemini' | 'scope-guard';
+        model: string;
+        reply: string;
+        navigationTarget?: string | null;
+        navigationLabel?: string | null;
+      }>('/api/ai/chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          provider,
+          messages: nextMessages.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+        }),
+      });
+
+      setMessages((current) => [
+        ...current,
+        {
+          role: 'assistant',
+          content: response.reply,
+          navigationTarget: response.navigationTarget,
+          navigationLabel: response.navigationLabel,
+        },
+      ]);
+      setChatError('');
+    } catch (err) {
+      setChatError(
+        err instanceof Error ? err.message : 'Unable to get a response from the AI assistant.'
+      );
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
   return (
     <MainLayout>
       <div className="space-y-8">
@@ -139,6 +220,108 @@ export default function InsightsPage() {
             Personalized recommendations powered by your financial and cyber signals
           </p>
         </div>
+
+        <Card className="p-6">
+          <div className="flex flex-col gap-6 lg:flex-row">
+            <div className="lg:w-72">
+              <div className="flex items-center gap-3">
+                <div className="rounded-xl bg-primary/10 p-3 text-primary">
+                  <MessageSquare className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-foreground">Insights Chat</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Chat with your financial copilot using OpenAI or Gemini.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Provider
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant={provider === 'openai' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setProvider('openai')}
+                  >
+                    OpenAI
+                  </Button>
+                  <Button
+                    variant={provider === 'gemini' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setProvider('gemini')}
+                  >
+                    Gemini
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  The backend is scoped to your own account only, and it can also guide you to the right page in this website.
+                </p>
+                <div className="rounded-xl border border-border bg-background p-3 text-xs text-muted-foreground">
+                  Try: "How is my savings rate?", "Which page should I use to update my goals?", or "Where do I check my security alerts?"
+                </div>
+              </div>
+            </div>
+
+            <div className="flex-1 rounded-2xl border border-border bg-muted/20 p-4">
+              <div className="space-y-3">
+                {messages.map((message, index) => (
+                  <div
+                    key={`${message.role}-${index}`}
+                    className={`rounded-2xl p-4 text-sm ${
+                      message.role === 'assistant'
+                        ? 'bg-background border border-border text-foreground'
+                        : 'ml-auto max-w-[90%] bg-primary text-primary-foreground'
+                    }`}
+                  >
+                    <p>{message.content}</p>
+                    {message.navigationTarget && (
+                      <div className="mt-3">
+                        <Button
+                          asChild
+                          size="sm"
+                          variant={message.role === 'assistant' ? 'outline' : 'secondary'}
+                        >
+                          <Link href={message.navigationTarget}>
+                            {message.navigationLabel || 'Open page'}
+                          </Link>
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {chatLoading && (
+                  <div className="rounded-2xl border border-border bg-background p-4 text-sm text-muted-foreground">
+                    Thinking...
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                <Input
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  placeholder="Ask about savings, goals, spending, risk, or next steps"
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                      event.preventDefault();
+                      handleSendChat();
+                    }
+                  }}
+                />
+                <Button onClick={handleSendChat} disabled={chatLoading || !chatInput.trim()}>
+                  Send
+                  <Send className="h-4 w-4" />
+                </Button>
+              </div>
+
+              {chatError && <p className="mt-3 text-sm text-destructive">{chatError}</p>}
+            </div>
+          </div>
+        </Card>
 
         <div className="space-y-4">
           {insightsData.map((insight) => (

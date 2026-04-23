@@ -301,7 +301,7 @@ export default function SecureWealthTwinPage() {
           <div className="max-w-3xl">
             <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-background/80 px-3 py-1 text-xs font-medium uppercase tracking-[0.2em] text-primary">
               <Sparkles className="h-3.5 w-3.5" />
-              Explicit Hackathon Workflow
+              Your finances at your fingertips, with a twin you can trust!
             </div>
             <h1 className="text-3xl font-bold text-foreground md:text-4xl">
               SecureWealth Twin
@@ -528,7 +528,7 @@ export default function SecureWealthTwinPage() {
             <div>
               <h2 className="text-xl font-semibold text-foreground">Risk scoring engine</h2>
               <p className="text-sm text-muted-foreground">
-                A simple weighted model, just like the hackathon brief asks for
+                A simple weighted model, to analyse risk
               </p>
             </div>
           </div>
@@ -625,9 +625,9 @@ export default function SecureWealthTwinPage() {
               <Sparkles className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-xl font-semibold text-foreground">How this aligns to the brief</h2>
+              <h2 className="text-xl font-semibold text-foreground">How SecureWealth Twin works</h2>
               <p className="text-sm text-muted-foreground">
-                The page makes the hackathon narrative explicit for judges and demos
+                SecureWealth Twin uses advanced algorithms to analyze your financial behavior and provide real-time protection.
               </p>
             </div>
           </div>
