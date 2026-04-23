@@ -5,151 +5,50 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Plus, Edit2, Trash2, Target } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useAppOverview, useFormattedCurrency } from '@/lib/app-data';
+import { apiRequest } from '@/lib/api-client';
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? 'https://psb-backend.onrender.com';
-
-interface GoalApiResponse {
-  _id: string;
-  title: string;
-  deadline: string;
-  currentAmount: number;
-  targetAmount: number;
-  progressPercentage?: number;
+function buildGoalDescription(goal: {
   predictedCompletion?: string;
-}
-
-interface GoalSimulationResponse {
-  monthsRequired?: number;
-  estimatedCompletion?: string;
-  message?: string;
-}
-
-interface FinancialResponse {
-  financial?: {
-    income?: number;
-    expenses?: number;
-  };
-}
-
-interface Goal {
-  _id: string;
-  name: string;
-  description: string;
-  deadline: string;
-  current: number;
-  target: number;
-}
-
-function buildGoalDescription(
-  goal: GoalApiResponse,
-  simulation: GoalSimulationResponse | null
-) {
-  if (simulation?.message) {
-    return simulation.message;
-  }
-
-  if (simulation?.estimatedCompletion) {
-    const completionDate = new Date(simulation.estimatedCompletion).toLocaleDateString();
-    return `AI estimate: on track to complete by ${completionDate}.`;
-  }
-
+  progress: number;
+  deadline?: string;
+}) {
   if (goal.predictedCompletion) {
-    const predictedDate = new Date(goal.predictedCompletion).toLocaleDateString();
-    return `Projected completion by ${predictedDate}.`;
+    return `AI estimate: on track to complete by ${new Date(
+      goal.predictedCompletion
+    ).toLocaleDateString()}.`;
   }
 
-  return 'AI is waiting for more savings history to estimate this goal.';
+  if (goal.progress < 35) {
+    return 'AI suggests increasing monthly contributions to regain momentum.';
+  }
+
+  if (goal.deadline) {
+    return `Tracked against deadline ${new Date(goal.deadline).toLocaleDateString()}.`;
+  }
+
+  return 'AI is waiting for more savings history to sharpen the forecast.';
 }
 
 export default function GoalsPage() {
-  const [goalsData, setGoalsData] = useState<Goal[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const fetchGoals = async () => {
-    try {
-      const token = localStorage.getItem('accessToken');
-      const headers = {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      };
-
-      const [goalsRes, financialRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/goals`, { headers }),
-        fetch(`${API_BASE_URL}/api/financial`, { headers }),
-      ]);
-
-      if (!goalsRes.ok || !financialRes.ok) {
-        throw new Error('Unable to fetch goals');
-      }
-
-      const goals: GoalApiResponse[] = await goalsRes.json();
-      const financialData: FinancialResponse = await financialRes.json();
-      const monthlyInvestment = Math.max(
-        (financialData.financial?.income || 0) - (financialData.financial?.expenses || 0),
-        0
-      );
-
-      const simulations = await Promise.all(
-        goals.map(async (goal) => {
-          try {
-            const simulationRes = await fetch(`${API_BASE_URL}/api/ai/simulation`, {
-              method: 'POST',
-              headers,
-              body: JSON.stringify({
-                targetAmount: goal.targetAmount,
-                currentAmount: goal.currentAmount,
-                monthlyInvestment,
-              }),
-            });
-
-            if (!simulationRes.ok) {
-              return null;
-            }
-
-            const simulation: GoalSimulationResponse = await simulationRes.json();
-            return simulation;
-          } catch (err) {
-            console.error('Goal AI simulation failed', err);
-            return null;
-          }
-        })
-      );
-
-      const normalizedGoals = goals.map((goal, index) => ({
-        _id: goal._id,
-        name: goal.title,
-        deadline: goal.deadline,
-        current: goal.currentAmount,
-        target: goal.targetAmount,
-        description: buildGoalDescription(goal, simulations[index]),
-      }));
-
-      setGoalsData(normalizedGoals);
-    } catch (err) {
-      console.error('Failed to fetch goals', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchGoals();
-  }, []);
+  const { data, loading, error, setData } = useAppOverview();
+  const formatCurrency = useFormattedCurrency();
 
   const deleteGoal = async (id: string) => {
     try {
-      const token = localStorage.getItem('accessToken');
-
-      await fetch(`${API_BASE_URL}/api/goals/${id}`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      fetchGoals();
+      await apiRequest(`/api/goals/${id}`, { method: 'DELETE' });
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              goals: current.goals.filter((goal) => goal.id !== id),
+              dashboard: {
+                ...current.dashboard,
+                goals: current.dashboard.goals.filter((goal) => goal.id !== id),
+              },
+            }
+          : current
+      );
     } catch (err) {
       console.error('Delete goal failed', err);
     }
@@ -163,17 +62,22 @@ export default function GoalsPage() {
     );
   }
 
+  if (error || !data) {
+    return (
+      <MainLayout>
+        <div className="p-8">{error || 'Unable to load goals.'}</div>
+      </MainLayout>
+    );
+  }
+
   return (
     <MainLayout>
       <div className="space-y-8">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-foreground mb-2">
-              Goals & Planning
-            </h1>
-
+            <h1 className="text-3xl font-bold text-foreground mb-2">Goals & Planning</h1>
             <p className="text-muted-foreground">
-              Track and manage your financial goals
+              Goal progress from your database with AI completion guidance
             </p>
           </div>
 
@@ -184,134 +88,90 @@ export default function GoalsPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {goalsData.map((goal) => {
-            const progress = goal.target > 0 ? (goal.current / goal.target) * 100 : 0;
-
-            return (
-              <Card
-                key={goal._id}
-                className="p-6 hover:border-primary/50 transition-colors"
-              >
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center">
-                      <Target className="h-5 w-5 text-primary" />
-                    </div>
-
-                    <div>
-                      <h3 className="font-semibold text-foreground">
-                        {goal.name}
-                      </h3>
-
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(goal.deadline).toLocaleDateString()}
-                      </p>
-                    </div>
+          {data.goals.map((goal) => (
+            <Card key={goal.id} className="p-6 hover:border-primary/50 transition-colors">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center">
+                    <Target className="h-5 w-5 text-primary" />
                   </div>
-
-                  <div className="flex gap-2">
-                    <Button size="icon" variant="ghost" className="h-8 w-8">
-                      <Edit2 className="h-4 w-4" />
-                    </Button>
-
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-8 w-8"
-                      onClick={() => deleteGoal(goal._id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Progress</span>
-
-                    <span className="font-semibold text-foreground">
-                      {progress.toFixed(1)}%
-                    </span>
-                  </div>
-
-                  <Progress value={progress} className="h-2" />
-
-                  <div className="grid grid-cols-2 gap-4 pt-2">
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-1">
-                        Current
-                      </p>
-
-                      <p className="font-semibold text-foreground">
-                        ${goal.current.toLocaleString()}
-                      </p>
-                    </div>
-
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-1">
-                        Target
-                      </p>
-
-                      <p className="font-semibold text-foreground">
-                        ${goal.target.toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-border">
+                  <div>
+                    <h3 className="font-semibold text-foreground">{goal.name}</h3>
                     <p className="text-xs text-muted-foreground">
-                      {goal.description}
+                      {goal.deadline
+                        ? new Date(goal.deadline).toLocaleDateString()
+                        : 'No deadline'}
                     </p>
                   </div>
+                </div>
 
+                <div className="flex gap-2">
+                  <Button size="icon" variant="ghost" className="h-8 w-8">
+                    <Edit2 className="h-4 w-4" />
+                  </Button>
                   <Button
-                    variant="outline"
-                    className="w-full"
-                    size="sm"
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8"
+                    onClick={() => deleteGoal(goal.id)}
                   >
-                    View Details
+                    <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
-              </Card>
-            );
-          })}
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Progress</span>
+                  <span className="font-semibold text-foreground">{goal.progress.toFixed(1)}%</span>
+                </div>
+
+                <Progress value={goal.progress} className="h-2" />
+
+                <div className="grid grid-cols-2 gap-4 pt-2">
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Current</p>
+                    <p className="font-semibold text-foreground">{formatCurrency(goal.current)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Target</p>
+                    <p className="font-semibold text-foreground">{formatCurrency(goal.target)}</p>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-border">
+                  <p className="text-xs text-muted-foreground">{buildGoalDescription(goal)}</p>
+                </div>
+
+                <Button variant="outline" className="w-full" size="sm">
+                  View Details
+                </Button>
+              </div>
+            </Card>
+          ))}
         </div>
 
         <Card className="p-6">
-          <h2 className="text-lg font-semibold text-foreground mb-4">
-            Goal Summary
-          </h2>
-
+          <h2 className="text-lg font-semibold text-foreground mb-4">Goal Summary</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="text-center">
-              <p className="text-muted-foreground text-sm mb-2">
-                Total Target
-              </p>
-
+              <p className="text-muted-foreground text-sm mb-2">Total Target</p>
               <p className="text-3xl font-bold text-foreground">
-                ${goalsData.reduce((sum, g) => sum + g.target, 0).toLocaleString()}
+                {formatCurrency(data.goals.reduce((sum, goal) => sum + goal.target, 0))}
               </p>
             </div>
-
             <div className="text-center border-l border-r border-border">
-              <p className="text-muted-foreground text-sm mb-2">
-                Total Saved
-              </p>
-
+              <p className="text-muted-foreground text-sm mb-2">Total Saved</p>
               <p className="text-3xl font-bold text-primary">
-                ${goalsData.reduce((sum, g) => sum + g.current, 0).toLocaleString()}
+                {formatCurrency(data.goals.reduce((sum, goal) => sum + goal.current, 0))}
               </p>
             </div>
-
             <div className="text-center">
-              <p className="text-muted-foreground text-sm mb-2">
-                Overall Progress
-              </p>
-
+              <p className="text-muted-foreground text-sm mb-2">Overall Progress</p>
               <p className="text-3xl font-bold text-foreground">
                 {(
-                  (goalsData.reduce((sum, g) => sum + g.current, 0) /
-                    Math.max(goalsData.reduce((sum, g) => sum + g.target, 0), 1)) *
+                  (data.goals.reduce((sum, goal) => sum + goal.current, 0) /
+                    Math.max(data.goals.reduce((sum, goal) => sum + goal.target, 0), 1)) *
                   100
                 ).toFixed(1)}
                 %

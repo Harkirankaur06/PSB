@@ -2,31 +2,24 @@
 
 import { MainLayout } from '@/components/main-layout';
 import { Button } from '@/components/ui/button';
-import { useState, useEffect } from 'react';
-import { TrendingUp, Star, ArrowRight, Filter } from 'lucide-react';
+import { useState } from 'react';
+import { Star, ArrowRight, Filter } from 'lucide-react';
+import { AppOverview, useAppOverview, useFormattedCurrency } from '@/lib/app-data';
 
-interface Opportunity {
-  id: number;
-  name: string;
-  category: string;
-  description: string;
-  expectedReturn: number;
-  riskLevel: 'low' | 'moderate' | 'high';
-  minimumInvestment: number;
-  fundSize: number;
-  fundRaised: number;
-  investorCount: number;
-  featured?: boolean;
-}
+const OpportunityCard = ({
+  opportunity,
+}: {
+  opportunity: AppOverview['opportunities'][number];
+}) => {
+  const formatCurrency = useFormattedCurrency();
 
-const OpportunityCard = ({ opportunity }: { opportunity: Opportunity }) => {
   const riskColors = {
     low: 'bg-green-500/20 text-green-600',
     moderate: 'bg-yellow-500/20 text-yellow-600',
     high: 'bg-red-500/20 text-red-600',
   };
 
-  const fundProgress = (opportunity.fundRaised / opportunity.fundSize) * 100;
+  const fundProgress = (opportunity.fundRaised / Math.max(opportunity.fundSize, 1)) * 100;
 
   return (
     <div className="bg-card border border-border rounded-xl p-6 hover:border-primary/50 transition-colors group">
@@ -52,7 +45,9 @@ const OpportunityCard = ({ opportunity }: { opportunity: Opportunity }) => {
         </div>
         <div>
           <p className="text-xs text-muted-foreground">Min. Investment</p>
-          <p className="text-lg font-semibold text-foreground">${opportunity.minimumInvestment.toLocaleString()}</p>
+          <p className="text-lg font-semibold text-foreground">
+            {formatCurrency(opportunity.minimumInvestment)}
+          </p>
         </div>
       </div>
 
@@ -62,18 +57,18 @@ const OpportunityCard = ({ opportunity }: { opportunity: Opportunity }) => {
           <p className="text-xs font-medium text-foreground">{fundProgress.toFixed(0)}%</p>
         </div>
         <div className="w-full h-2 bg-secondary/20 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-primary rounded-full"
-            style={{ width: `${fundProgress}%` }}
-          />
+          <div className="h-full bg-primary rounded-full" style={{ width: `${fundProgress}%` }} />
         </div>
         <p className="text-xs text-muted-foreground mt-2">
-          ${opportunity.fundRaised.toLocaleString()} of ${opportunity.fundSize.toLocaleString()}
+          {formatCurrency(opportunity.fundRaised)} of {formatCurrency(opportunity.fundSize)}
         </p>
       </div>
 
       <div className="flex items-center justify-between mb-4 pb-4 border-b border-border">
-        <p className="text-xs text-muted-foreground">{opportunity.investorCount.toLocaleString()} investors</p>
+        <p className="text-xs text-muted-foreground">
+          {opportunity.investorCount.toLocaleString()} investors
+        </p>
+        <p className="text-xs text-muted-foreground">Source: {opportunity.source}</p>
       </div>
 
       <Button className="w-full gap-2 group-hover:translate-x-1 transition-transform">
@@ -85,44 +80,9 @@ const OpportunityCard = ({ opportunity }: { opportunity: Opportunity }) => {
 };
 
 export default function InvestPage() {
-
-  const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
+  const { data, loading, error } = useAppOverview();
   const [selectedRisk, setSelectedRisk] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-
-    const fetchInvestments = async () => {
-      try {
-
-        const token = localStorage.getItem("accessToken");
-
-        const res = await fetch(
-          "https://psb-backend.onrender.com/api/transaction/history",
-          {
-            headers: {
-              Authorization: `Bearer ${token}`
-            }
-          }
-        );
-
-        const text = await res.text();
-        console.log(text);
-        const data = JSON.parse(text);
-
-        setOpportunities(data);
-
-      } catch (err) {
-        console.error("Error fetching investments", err);
-      }
-
-      setLoading(false);
-    };
-
-    fetchInvestments();
-
-  }, []);
 
   if (loading) {
     return (
@@ -132,41 +92,44 @@ export default function InvestPage() {
     );
   }
 
+  if (error || !data) {
+    return (
+      <MainLayout>
+        <div className="p-8">{error || 'Unable to load opportunities.'}</div>
+      </MainLayout>
+    );
+  }
+
+  const opportunities = data.opportunities;
   const filteredOpportunities = opportunities.filter((opp) => {
     if (selectedRisk && opp.riskLevel !== selectedRisk) return false;
     if (selectedCategory && opp.category !== selectedCategory) return false;
     return true;
   });
 
-  const categories = [...new Set(opportunities.map((o) => o.category))];
+  const categories = [...new Set(opportunities.map((opportunity) => opportunity.category))];
   const riskLevels = ['low', 'moderate', 'high'];
 
   return (
     <MainLayout>
       <div className="space-y-8 pb-8">
-
         <div>
           <h1 className="text-3xl font-bold text-foreground mb-2">Investment Opportunities</h1>
           <p className="text-muted-foreground">
-            Discover curated investment opportunities tailored to your goals
+            AI-ranked opportunities blended with your current goals and cyber posture
           </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-
-          {/* Filters */}
           <div className="md:col-span-1 bg-card border border-border rounded-xl p-6">
-
             <div className="flex items-center gap-2 mb-4">
               <Filter className="h-5 w-5 text-primary" />
               <h3 className="font-semibold text-foreground">Filters</h3>
             </div>
 
             <div className="space-y-6">
-
               <div>
                 <p className="text-sm font-medium text-foreground mb-3">Risk Level</p>
-
                 <div className="space-y-2">
                   {riskLevels.map((level) => (
                     <button
@@ -186,7 +149,6 @@ export default function InvestPage() {
 
               <div>
                 <p className="text-sm font-medium text-foreground mb-3">Category</p>
-
                 <div className="space-y-2">
                   {categories.map((category) => (
                     <button
@@ -218,36 +180,23 @@ export default function InvestPage() {
                   Clear Filters
                 </Button>
               )}
-
             </div>
           </div>
 
-          {/* Opportunity Cards */}
           <div className="md:col-span-2">
-
             <div className="grid grid-cols-1 gap-6">
-
               {filteredOpportunities.length > 0 ? (
                 filteredOpportunities.map((opportunity) => (
-                  <OpportunityCard
-                    key={opportunity.id}
-                    opportunity={opportunity}
-                  />
+                  <OpportunityCard key={opportunity.id} opportunity={opportunity} />
                 ))
               ) : (
                 <div className="text-center py-12">
-                  <p className="text-muted-foreground">
-                    No opportunities match your filters
-                  </p>
+                  <p className="text-muted-foreground">No opportunities match your filters</p>
                 </div>
               )}
-
             </div>
-
           </div>
-
         </div>
-
       </div>
     </MainLayout>
   );

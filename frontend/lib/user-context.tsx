@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, ReactNode } from 'react';
+import { apiRequest } from '@/lib/api-client';
 
 const INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -22,18 +23,8 @@ interface UserContextType {
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
-const DEFAULT_USER: User = {
-  id: '1',
-  name: 'Sarah Anderson',
-  email: 'sarah.anderson@example.com',
-  avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah',
-  balance: 245680.5,
-  netWorth: 1425680.5,
-  currency: 'INR',
-};
-
 export function UserProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = React.useState<User | null>(DEFAULT_USER);
+  const [user, setUser] = React.useState<User | null>(null);
   const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearAuthStorage = React.useCallback(() => {
@@ -63,6 +54,40 @@ export function UserProvider({ children }: { children: ReactNode }) {
   }, [logout]);
 
   React.useEffect(() => {
+    const loadUser = async () => {
+      if (!localStorage.getItem('accessToken')) {
+        setUser(null);
+        return;
+      }
+
+      try {
+        const [profile, overview] = await Promise.all([
+          apiRequest<{
+            id: string;
+            name: string;
+            email: string;
+          }>('/api/auth/profile'),
+          apiRequest<{
+            metrics: { netWorth: number };
+            financial: { savings: number };
+          }>('/api/app/overview'),
+        ]);
+
+        setUser({
+          id: profile.id,
+          name: profile.name,
+          email: profile.email,
+          balance: overview.financial.savings || 0,
+          netWorth: overview.metrics.netWorth || 0,
+          currency: 'INR',
+        });
+      } catch {
+        setUser(null);
+      }
+    };
+
+    loadUser();
+
     const events: Array<keyof WindowEventMap> = [
       'mousemove',
       'keydown',

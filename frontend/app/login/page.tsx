@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { AlertCircle, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { apiRequest } from '@/lib/api-client';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -22,24 +23,18 @@ export default function LoginPage() {
     setError('');
 
     try {
-      const res = await fetch("https://psb-backend.onrender.com/api/auth/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+      const data = await apiRequest<{
+        accessToken: string;
+        refreshToken: string;
+        deviceId: string;
+      }>('/api/auth/login', {
+        auth: false,
+        method: 'POST',
         body: JSON.stringify({
           email,
-          password
-        })
+          password,
+        }),
       });
-
-      const text = await res.text();
-      console.log(text);
-      const data = JSON.parse(text);
-
-      if (!res.ok) {
-        throw new Error(data.message || "Login failed");
-      }
 
       // Save token
       localStorage.setItem("accessToken", data.accessToken);

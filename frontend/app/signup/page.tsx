@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { AlertCircle, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { apiRequest } from '@/lib/api-client';
 
 export default function SignupPage() {
   const router = useRouter();
@@ -63,30 +64,15 @@ export default function SignupPage() {
     setLoading(true);
 
     try {
-
-      const res = await fetch(
-        "https://psb-backend.onrender.com/api/auth/signup",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            name: `${formData.firstName} ${formData.lastName}`,
-            email: formData.email,
-            password: formData.password
-          })
-        }
-      );
-
-      const text = await res.text();
-      console.log(text);
-
-      const data = JSON.parse(text);
-
-      if (!res.ok) {
-        throw new Error(data.message || "Signup failed");
-      }
+      await apiRequest('/api/auth/signup', {
+        auth: false,
+        method: 'POST',
+        body: JSON.stringify({
+          name: `${formData.firstName} ${formData.lastName}`.trim(),
+          email: formData.email,
+          password: formData.password,
+        }),
+      });
 
       router.push('/login');
 
