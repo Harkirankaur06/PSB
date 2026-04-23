@@ -1,11 +1,12 @@
 'use client';
 
 import { useState } from 'react';
+import { usePathname } from 'next/navigation';
+import Link from 'next/link';
 import { MainLayout } from '@/components/main-layout';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import Link from 'next/link';
 import {
   Brain,
   AlertTriangle,
@@ -28,11 +29,19 @@ interface Insight {
   actionable: boolean;
 }
 
+interface ChatAction {
+  type: string;
+  target: string;
+  label: string;
+  requiresConfirmation?: boolean;
+}
+
 interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
-  navigationTarget?: string | null;
-  navigationLabel?: string | null;
+  intent?: 'NAVIGATE' | 'FINANCIAL_QUERY' | 'ACTION' | 'RISK_ALERT' | 'OUT_OF_SCOPE';
+  actions?: ChatAction[];
+  guideSteps?: string[];
 }
 
 const iconMap = {
@@ -131,6 +140,7 @@ function buildInsights(data: AppOverview): Insight[] {
 
 export default function InsightsPage() {
   const { data, loading, error } = useAppOverview();
+  const pathname = usePathname();
   const [provider, setProvider] = useState<'openai' | 'gemini'>('openai');
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
@@ -139,7 +149,7 @@ export default function InsightsPage() {
     {
       role: 'assistant',
       content:
-        'Ask about your savings rate, spending, goals, or portfolio posture and I will answer from your current account context.',
+        'Ask about your investment plans, savings, goals, risk posture, or where to do something in L.E.G.E.N.D.',
     },
   ]);
 
@@ -179,12 +189,14 @@ export default function InsightsPage() {
         provider: 'openai' | 'gemini' | 'scope-guard';
         model: string;
         reply: string;
-        navigationTarget?: string | null;
-        navigationLabel?: string | null;
+        intent?: 'NAVIGATE' | 'FINANCIAL_QUERY' | 'ACTION' | 'RISK_ALERT' | 'OUT_OF_SCOPE';
+        actions?: ChatAction[];
+        guideSteps?: string[];
       }>('/api/ai/chat', {
         method: 'POST',
         body: JSON.stringify({
           provider,
+          currentPage: pathname,
           messages: nextMessages.map((message) => ({
             role: message.role,
             content: message.content,
@@ -197,11 +209,11 @@ export default function InsightsPage() {
         {
           role: 'assistant',
           content: response.reply,
-          navigationTarget: response.navigationTarget,
-          navigationLabel: response.navigationLabel,
+          intent: response.intent,
+          actions: response.actions,
+          guideSteps: response.guideSteps,
         },
       ]);
-      setChatError('');
     } catch (err) {
       setChatError(
         err instanceof Error ? err.message : 'Unable to get a response from the AI assistant.'
@@ -231,7 +243,7 @@ export default function InsightsPage() {
                 <div>
                   <h2 className="text-lg font-semibold text-foreground">Insights Chat</h2>
                   <p className="text-sm text-muted-foreground">
-                    Chat with your financial copilot using OpenAI or Gemini.
+                    One assistant, two roles: financial insight and guided navigation.
                   </p>
                 </div>
               </div>
@@ -257,10 +269,10 @@ export default function InsightsPage() {
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  The backend is scoped to your own account only, and it can also guide you to the right page in this website.
+                  Financial questions get direct answers first. Navigation commands return guided steps and buttons.
                 </p>
                 <div className="rounded-xl border border-border bg-background p-3 text-xs text-muted-foreground">
-                  Try: "How is my savings rate?", "Which page should I use to update my goals?", or "Where do I check my security alerts?"
+                  Try: "Help me plan my investments", "How do I add a trusted contact?", or "Take me to Bank Connections".
                 </div>
               </div>
             </div>
@@ -277,17 +289,39 @@ export default function InsightsPage() {
                     }`}
                   >
                     <p>{message.content}</p>
-                    {message.navigationTarget && (
-                      <div className="mt-3">
-                        <Button
-                          asChild
-                          size="sm"
-                          variant={message.role === 'assistant' ? 'outline' : 'secondary'}
-                        >
-                          <Link href={message.navigationTarget}>
-                            {message.navigationLabel || 'Open page'}
-                          </Link>
-                        </Button>
+                    {message.intent && message.role === 'assistant' && (
+                      <p className="mt-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+                        {message.intent.replace('_', ' ')}
+                      </p>
+                    )}
+                    {message.guideSteps && message.guideSteps.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        {message.guideSteps.map((step) => (
+                          <p key={step} className="text-xs text-muted-foreground">
+                            {step}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                    {message.actions && message.actions.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {message.actions.map((action) => (
+                          <Button
+                            key={`${action.type}-${action.target}`}
+                            asChild={action.type === 'NAVIGATE'}
+                            size="sm"
+                            variant="outline"
+                          >
+                            {action.type === 'NAVIGATE' ? (
+                              <Link href={action.target}>{action.label}</Link>
+                            ) : (
+                              <span>
+                                {action.label}
+                                {action.requiresConfirmation ? ' (Confirm first)' : ''}
+                              </span>
+                            )}
+                          </Button>
+                        ))}
                       </div>
                     )}
                   </div>
@@ -304,7 +338,7 @@ export default function InsightsPage() {
                 <Input
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="Ask about savings, goals, spending, risk, or next steps"
+                  placeholder="Ask about investments, savings, risk, goals, or app navigation"
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' && !event.shiftKey) {
                       event.preventDefault();

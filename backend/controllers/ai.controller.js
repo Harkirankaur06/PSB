@@ -24,6 +24,7 @@ async function chat(req, res) {
       userId: req.user._id,
       provider: req.body.provider,
       messages: req.body.messages,
+      currentPage: req.body.currentPage,
     });
 
     res.json(result);

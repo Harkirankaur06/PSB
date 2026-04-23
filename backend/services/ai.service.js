@@ -1,6 +1,9 @@
 const FinancialData = require("../models/FinancialData");
 const Goal = require("../models/Goal");
 const Transaction = require("../models/Transaction");
+const { classifyIntent } = require("../ai/intentClassifier");
+const { buildNavigationGuide, buildActionsForIntent } = require("../ai/toolExecutor");
+const { buildFinancialAssistantPrompt } = require("../ai/promptTemplates");
 
 function safeDivide(value, divisor) {
   if (!divisor) return 0;
@@ -135,10 +138,7 @@ function buildPortfolioAssistant(financial, transactions, goals, summary, recomm
   const financialHealthScore = summary.financialHealthScore;
   const riskyTransactions = summary.riskyTransactions;
   const estimatedMonthlyReturn = Number(
-    (
-      estimateReturnByType(topType, financialHealthScore, riskyTransactions) /
-      6
-    ).toFixed(2)
+    (estimateReturnByType(topType, financialHealthScore, riskyTransactions) / 6).toFixed(2)
   );
 
   let outlook = "steady";
@@ -185,9 +185,7 @@ async function generateInsights(userId) {
   }
 
   const insights = [];
-
-  const savingsRate =
-    financial.income > 0 ? (financial.savings / financial.income) * 100 : 0;
+  const savingsRate = financial.income > 0 ? (financial.savings / financial.income) * 100 : 0;
 
   if (savingsRate < 20) {
     insights.push("Your savings rate is low. Try to save at least 20% of income.");
@@ -200,11 +198,7 @@ async function generateInsights(userId) {
   }
 
   goals.forEach((goal) => {
-    const progress =
-      goal.targetAmount > 0
-        ? (goal.currentAmount / goal.targetAmount) * 100
-        : 0;
-
+    const progress = goal.targetAmount > 0 ? (goal.currentAmount / goal.targetAmount) * 100 : 0;
     if (progress < 30) {
       insights.push(`Goal "${goal.title}" is behind schedule.`);
     }
@@ -275,19 +269,6 @@ function buildChatContext(financial, goals, transactions, insightPayload) {
   ].join("\n");
 }
 
-const NAVIGATION_TARGETS = {
-  "/dashboard": ["dashboard", "overview", "summary", "home"],
-  "/portfolio": ["portfolio", "holdings", "allocation", "investments summary"],
-  "/invest": ["invest", "sip", "investment", "start investing", "buy", "deploy cash"],
-  "/goals": ["goal", "goals", "planning", "target", "save for", "deadline"],
-  "/insights": ["insight", "insights", "recommendation", "recommendations", "ai"],
-  "/actions": ["action", "actions", "next step", "task", "priority"],
-  "/security": ["security", "verify", "fraud", "risk", "duress", "protection check"],
-  "/contacts": ["contact", "contacts", "trusted contact", "family"],
-  "/settings": ["setting", "settings", "password", "pin", "otp", "device", "account"],
-  "/twin": ["twin", "securewealth twin", "simulation", "workflow"],
-};
-
 const ALLOWED_SCOPE_TERMS = [
   "my",
   "me",
@@ -327,6 +308,10 @@ const ALLOWED_SCOPE_TERMS = [
   "screen",
   "open",
   "take me",
+  "plan",
+  "plans",
+  "bank",
+  "banks",
 ];
 
 const BLOCKED_GLOBAL_TERMS = [
@@ -347,18 +332,6 @@ const BLOCKED_GLOBAL_TERMS = [
   "around the world",
 ];
 
-function detectNavigationTarget(text) {
-  const lower = text.toLowerCase();
-
-  for (const [href, keywords] of Object.entries(NAVIGATION_TARGETS)) {
-    if (keywords.some((keyword) => lower.includes(keyword))) {
-      return href;
-    }
-  }
-
-  return null;
-}
-
 function isInUserOnlyScope(text) {
   const lower = text.toLowerCase();
   const hasAllowedSignal = ALLOWED_SCOPE_TERMS.some((term) => lower.includes(term));
@@ -372,17 +345,24 @@ function isInUserOnlyScope(text) {
 }
 
 function buildScopeRefusal(text) {
-  const navigationTarget = detectNavigationTarget(text);
+  const classified = classifyIntent(text);
+  const navigationTarget = classified.routeTarget?.path;
 
   return {
     provider: "scope-guard",
     model: "local",
+    intent: "OUT_OF_SCOPE",
     reply:
       "I can only help with your own L.E.G.E.N.D. account, such as your savings, spending, goals, portfolio, transactions, security, and where to do those tasks in this website.",
-    navigationTarget: navigationTarget || "/dashboard",
-    navigationLabel: navigationTarget
-      ? "Open relevant page"
-      : "Open dashboard",
+    actions: [
+      {
+        type: "NAVIGATE",
+        target: navigationTarget || "/dashboard",
+        label: navigationTarget ? "Open relevant page" : "Open dashboard",
+        requiresConfirmation: false,
+      },
+    ],
+    guideSteps: navigationTarget ? buildNavigationGuide(classified.routeTarget) : [],
   };
 }
 
@@ -414,7 +394,7 @@ function pickProvider(requestedProvider) {
   return process.env.AI_CHAT_PROVIDER || "openai";
 }
 
-async function chatWithOpenAI(messages, contextBlock) {
+async function chatWithOpenAI(messages, contextBlock, intent, currentPage) {
   const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
@@ -436,9 +416,7 @@ async function chatWithOpenAI(messages, contextBlock) {
           content: [
             {
               type: "input_text",
-              text:
-                "You are L.E.G.E.N.D.'s financial insights assistant. Only answer about this user's own account, their finances, their security state, and how to navigate this website for those tasks. Do not answer broad world questions, news, politics, sports, weather, entertainment, or general knowledge. If a request is outside the provided user context, refuse briefly and redirect them back to their own account. If the user is asking where to do something in the website, include the most relevant page path from this set: /dashboard, /portfolio, /invest, /goals, /insights, /actions, /security, /contacts, /settings, /twin. Do not claim to execute transactions. Mention when guidance depends on incomplete data.\n\nUser account context:\n" +
-                contextBlock,
+              text: buildFinancialAssistantPrompt(contextBlock, intent, currentPage),
             },
           ],
         },
@@ -463,9 +441,7 @@ async function chatWithOpenAI(messages, contextBlock) {
 
   const text =
     data.output_text ||
-    data.output
-      ?.flatMap((item) => item.content || [])
-      ?.find((item) => item.type === "output_text")
+    data.output?.flatMap((item) => item.content || [])?.find((item) => item.type === "output_text")
       ?.text;
 
   if (!text) {
@@ -479,7 +455,7 @@ async function chatWithOpenAI(messages, contextBlock) {
   };
 }
 
-async function chatWithGemini(messages, contextBlock) {
+async function chatWithGemini(messages, contextBlock, intent, currentPage) {
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
@@ -499,9 +475,7 @@ async function chatWithGemini(messages, contextBlock) {
         systemInstruction: {
           parts: [
             {
-              text:
-                "You are L.E.G.E.N.D.'s financial insights assistant. Only answer about this user's own account, their finances, their security state, and how to navigate this website for those tasks. Do not answer broad world questions, news, politics, sports, weather, entertainment, or general knowledge. If a request is outside the provided user context, refuse briefly and redirect them back to their own account. If the user is asking where to do something in the website, include the most relevant page path from this set: /dashboard, /portfolio, /invest, /goals, /insights, /actions, /security, /contacts, /settings, /twin. Do not claim to execute transactions. Mention when guidance depends on incomplete data.\n\nUser account context:\n" +
-                contextBlock,
+              text: buildFinancialAssistantPrompt(contextBlock, intent, currentPage),
             },
           ],
         },
@@ -535,7 +509,42 @@ async function chatWithGemini(messages, contextBlock) {
   };
 }
 
-async function chatWithAssistant({ userId, provider, messages }) {
+function buildLocalFinancialReply({ financial, goals, insightPayload, latestUserMessage }) {
+  const lower = latestUserMessage.toLowerCase();
+  const recommendations = insightPayload.recommendations || [];
+
+  if (lower.includes("investment")) {
+    const ratio = financial.income > 0 ? (financial.investments / financial.income) * 100 : 0;
+    const topRecommendation =
+      recommendations.find((item) => item.toLowerCase().includes("sip")) ||
+      recommendations[0] ||
+      "Stay diversified and avoid concentrating too much into one move at once.";
+
+    return `Your current investment base is ${financial.investments || 0}, which is about ${ratio.toFixed(
+      1
+    )}% of monthly income. Based on your profile, the next sensible move is: ${topRecommendation}`;
+  }
+
+  if (lower.includes("saving") || lower.includes("savings")) {
+    return `Your current savings are ${financial.savings || 0}, and your savings rate is ${
+      insightPayload.summary?.savingsRate ?? 0
+    }%. ${insightPayload.insights?.[0] || "Your saving pattern looks stable right now."}`;
+  }
+
+  if (lower.includes("goal")) {
+    return goals.length > 0
+      ? `You have ${goals.length} active goals. The slower goals need extra contributions first, so review the Goals page and adjust your monthly plan.`
+      : "You do not have active goals yet. Creating one would help tailor your investment planning better.";
+  }
+
+  return (
+    insightPayload.portfolioAssistant?.headline ||
+    recommendations[0] ||
+    "Your account looks ready for a focused review of savings, spending, and investment posture."
+  );
+}
+
+async function chatWithAssistant({ userId, provider, messages, currentPage = null }) {
   const normalizedMessages = normalizeMessages(messages);
   const latestUserMessage = [...normalizedMessages]
     .reverse()
@@ -545,19 +554,20 @@ async function chatWithAssistant({ userId, provider, messages }) {
     throw new Error("A user chat message is required");
   }
 
-  const navigationTarget = detectNavigationTarget(latestUserMessage);
+  const classification = classifyIntent(latestUserMessage);
 
   if (!isInUserOnlyScope(latestUserMessage)) {
     return buildScopeRefusal(latestUserMessage);
   }
 
-  if (navigationTarget) {
+  if (classification.intent === "NAVIGATE" && classification.routeTarget) {
     return {
       provider: "scope-guard",
       model: "local",
-      reply: `The best page for that in L.E.G.E.N.D. is ${navigationTarget}.`,
-      navigationTarget,
-      navigationLabel: "Open suggested page",
+      intent: "NAVIGATE",
+      reply: `The best page for that in L.E.G.E.N.D. is ${classification.routeTarget.path}.`,
+      actions: buildActionsForIntent(classification.intent, classification.routeTarget),
+      guideSteps: buildNavigationGuide(classification.routeTarget),
     };
   }
 
@@ -569,26 +579,61 @@ async function chatWithAssistant({ userId, provider, messages }) {
     return {
       provider: "scope-guard",
       model: "local",
+      intent: classification.intent,
       reply:
         "I can help you navigate the website right now, but I can't answer account-finance questions yet because no financial data is available for this user.",
-      navigationTarget: "/dashboard",
-      navigationLabel: "Open dashboard",
+      actions: [
+        {
+          type: "NAVIGATE",
+          target: "/dashboard",
+          label: "Open dashboard",
+          requiresConfirmation: false,
+        },
+      ],
+      guideSteps: [],
     };
   }
 
   const insightPayload = await generateInsights(userId);
   const contextBlock = buildChatContext(financial, goals, transactions, insightPayload);
   const resolvedProvider = pickProvider(provider);
+  const actions =
+    classification.intent === "NAVIGATE" ||
+    classification.intent === "ACTION" ||
+    classification.intent === "RISK_ALERT"
+      ? buildActionsForIntent(classification.intent, classification.routeTarget)
+      : [];
+  const guideSteps =
+    (classification.intent === "ACTION" || classification.intent === "RISK_ALERT") &&
+    classification.routeTarget
+      ? buildNavigationGuide(classification.routeTarget)
+      : [];
 
-  const response =
-    resolvedProvider === "gemini"
-      ? await chatWithGemini(normalizedMessages, contextBlock)
-      : await chatWithOpenAI(normalizedMessages, contextBlock);
+  let response;
+
+  try {
+    response =
+      resolvedProvider === "gemini"
+        ? await chatWithGemini(normalizedMessages, contextBlock, classification.intent, currentPage)
+        : await chatWithOpenAI(normalizedMessages, contextBlock, classification.intent, currentPage);
+  } catch (error) {
+    response = {
+      provider: "local-fallback",
+      model: "heuristic",
+      reply: buildLocalFinancialReply({
+        financial,
+        goals,
+        insightPayload,
+        latestUserMessage,
+      }),
+    };
+  }
 
   return {
     ...response,
-    navigationTarget,
-    navigationLabel: navigationTarget ? "Open suggested page" : null,
+    intent: classification.intent,
+    actions,
+    guideSteps,
   };
 }
 
@@ -605,7 +650,7 @@ function simulateGoalCompletion({ targetAmount, currentAmount, monthlyInvestment
 
   return {
     monthsRequired: months,
-    estimatedCompletion: completionDate
+    estimatedCompletion: completionDate,
   };
 }
 
