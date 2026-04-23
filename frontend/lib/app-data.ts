@@ -38,6 +38,10 @@ export interface AppTransaction {
   relativeDate: string;
   description: string;
   metadata?: Record<string, unknown>;
+  reviewFlags?: Array<{
+    type: string;
+    message: string;
+  }>;
 }
 
 export interface AppContact {
@@ -106,6 +110,19 @@ export interface AppOverview {
       estimatedReturns?: Partial<Record<AppTransaction['type'], number>>;
     };
   };
+  market: {
+    source: string;
+    headline: string;
+    indicators: Array<{
+      code: string;
+      name: string;
+      value: number;
+      changePercent: number;
+      trend: 'up' | 'down' | 'flat';
+      category: string;
+    }>;
+    recommendations: string[];
+  };
   cyber: {
     protectionScore: number;
     trustScore: number;
@@ -134,6 +151,8 @@ export interface AppOverview {
     priority: 'high' | 'medium' | 'low';
     value: number;
     actionPath: string;
+    reviewType?: string;
+    reviewMessage?: string;
   }>;
   protection: Array<{
     id: string;

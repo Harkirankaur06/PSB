@@ -7,6 +7,7 @@ const riskService = require("./risk.service");
 const aiService = require("./ai.service");
 const securityService = require("./security.service");
 const trustedContactService = require("./trustedContact.service");
+const marketService = require("./market.service");
 
 function round(value) {
   return Number((value || 0).toFixed(2));
@@ -96,23 +97,52 @@ function buildGoalSummary(goals) {
 }
 
 function buildTransactionsSummary(transactions) {
-  return transactions.map((tx) => ({
-    id: String(tx._id),
-    type: tx.type,
-    amount: tx.amount,
-    status: tx.status,
-    riskScore: tx.riskScore || 0,
-    date: tx.createdAt,
-    relativeDate: getRelativeDate(tx.createdAt),
-    description:
-      tx.metadata?.assetName ||
-      tx.metadata?.name ||
-      `${tx.type.charAt(0).toUpperCase()}${tx.type.slice(1)} transaction`,
-    metadata: tx.metadata || {},
-  }));
+  const typeCounts = transactions.reduce((acc, tx) => {
+    acc[tx.type] = (acc[tx.type] || 0) + 1;
+    return acc;
+  }, {});
+
+  const avgAmount =
+    transactions.length > 0
+      ? transactions.reduce((sum, tx) => sum + (tx.amount || 0), 0) / transactions.length
+      : 0;
+
+  return transactions.map((tx) => {
+    const reviewFlags = [];
+
+    if (typeCounts[tx.type] === 1) {
+      reviewFlags.push({
+        type: "first-time",
+        message: `First-time ${tx.type} detected. Additional review is recommended.`,
+      });
+    }
+
+    if (avgAmount > 0 && tx.amount >= avgAmount * 2) {
+      reviewFlags.push({
+        type: "high-value",
+        message: "This action is materially larger than the user's recent transaction pattern.",
+      });
+    }
+
+    return {
+      id: String(tx._id),
+      type: tx.type,
+      amount: tx.amount,
+      status: tx.status,
+      riskScore: tx.riskScore || 0,
+      date: tx.createdAt,
+      relativeDate: getRelativeDate(tx.createdAt),
+      description:
+        tx.metadata?.assetName ||
+        tx.metadata?.name ||
+        `${tx.type.charAt(0).toUpperCase()}${tx.type.slice(1)} transaction`,
+      metadata: tx.metadata || {},
+      reviewFlags,
+    };
+  });
 }
 
-function buildActionItems({ metrics, goals, aiInsights, riskData, transactions }) {
+function buildActionItems({ metrics, goals, aiInsights, riskData, transactions, marketIntel }) {
   const items = [];
 
   if ((metrics.savingsRate || 0) < 20) {
@@ -161,6 +191,56 @@ function buildActionItems({ metrics, goals, aiInsights, riskData, transactions }
       priority: "medium",
       value: Math.max((metrics.netWorth || 0) * 0.01, 0),
       actionPath: "/insights",
+    });
+  }
+
+  const firstTimeReview = transactions.find((item) =>
+    (item.reviewFlags || []).some((flag) => flag.type === "first-time")
+  );
+  if (firstTimeReview) {
+    items.push({
+      id: "first-time-action-review",
+      title: "Review first-time investment action",
+      description: `Your ${firstTimeReview.type} flow is new for this account. Confirm purpose, beneficiary, and timing before execution.`,
+      status: "pending",
+      priority: "medium",
+      value: firstTimeReview.amount,
+      actionPath: "/invest",
+      reviewType: "first-time",
+      reviewMessage:
+        "First-time investment detected - additional review applied before wealth action execution.",
+    });
+  }
+
+  const highValueReview = transactions.find((item) =>
+    (item.reviewFlags || []).some((flag) => flag.type === "high-value")
+  );
+  if (highValueReview) {
+    items.push({
+      id: "high-value-review",
+      title: "High-value action under review",
+      description: `A ${formatCurrencyLabel(highValueReview.amount)} action is above your recent baseline and should be reviewed carefully.`,
+      status: "recommended",
+      priority: "high",
+      value: highValueReview.amount,
+      actionPath: "/security",
+      reviewType: "high-value",
+      reviewMessage:
+        "High-value wealth action detected - verify intent, device trust, and market timing before proceeding.",
+    });
+  }
+
+  if ((marketIntel.recommendations || []).length > 0) {
+    items.push({
+      id: "market-strategy-review",
+      title: "Market strategy review",
+      description: marketIntel.recommendations[0],
+      status: "recommended",
+      priority: "medium",
+      value: Math.max((metrics.netWorth || 0) * 0.015, 0),
+      actionPath: "/invest",
+      reviewType: "market",
+      reviewMessage: "Macro and market signals have been ingested into your current strategy guidance.",
     });
   }
 
@@ -215,10 +295,11 @@ function buildProtectionPolicies({ financial, riskData, securityStatus, contacts
   ];
 }
 
-function buildOpportunityCatalog({ metrics, goals, aiInsights, riskData, financial }) {
+function buildOpportunityCatalog({ metrics, goals, aiInsights, riskData, financial, marketIntel }) {
   const safetyBias = (riskData.protectionScore || 0) >= 75 ? "moderate" : "low";
   const baseAmount = Math.max(metrics.monthlyBalance || financial.savings || 0, 0);
   const firstGoal = goals[0];
+  const marketHeadline = marketIntel.recommendations?.[0] || marketIntel.headline;
 
   return [
     {
@@ -242,6 +323,7 @@ function buildOpportunityCatalog({ metrics, goals, aiInsights, riskData, financi
       name: "Income Compound Basket",
       category: "Diversified",
       description:
+        marketHeadline ||
         aiInsights.portfolioAssistant?.headline ||
         "Balance growth and cash resilience using your current asset mix.",
       expectedReturn: aiInsights.portfolioAssistant?.bestPerformerReturn || 10.2,
@@ -266,7 +348,31 @@ function buildOpportunityCatalog({ metrics, goals, aiInsights, riskData, financi
       investorCount: Math.max((riskData.summary?.totalAllowed || 0) + 30, 30),
       source: "cyber",
     },
+    {
+      id: "macro-shift-ladder",
+      name: "Macro Shift Allocation",
+      category: "Market Intelligence",
+      description:
+        marketIntel.recommendations?.[1] ||
+        "Adaptive allocation shaped by rates, inflation, and global market momentum.",
+      expectedReturn: 7.4,
+      riskLevel: ratesToRiskLevel(marketIntel),
+      minimumInvestment: Math.max(Math.round((financial.income || 0) * 0.2), 3000),
+      fundSize: Math.max(Math.round((metrics.netWorth || 0) * 0.18), 75000),
+      fundRaised: Math.max(Math.round((financial.investments || 0) * 0.4), 0),
+      investorCount: 64,
+      featured: false,
+      source: marketIntel.source,
+    },
   ];
+}
+
+function ratesToRiskLevel(marketIntel) {
+  const rates = (marketIntel.indicators || []).find((item) => item.category === "rates");
+  if (!rates) return "moderate";
+  if (rates.changePercent > 1) return "low";
+  if (rates.changePercent < -1) return "high";
+  return "moderate";
 }
 
 function buildSecurityFeed({ user, securityStatus, riskData, transactions, logs }) {
@@ -403,7 +509,7 @@ function buildHeaderNotifications({ profile, goals, transactions, riskData, audi
 }
 
 async function getOverview(user, session) {
-  const [profile, financialResult, transactionsRaw, aiInsights, riskData, securityStatus, contacts] =
+  const [profile, financialResult, transactionsRaw, aiInsights, riskData, securityStatus, contacts, marketIntel] =
     await Promise.all([
       User.findById(user._id),
       financialService.getFinancialWithGoals(user._id),
@@ -412,6 +518,7 @@ async function getOverview(user, session) {
       riskService.getRiskDashboard(user),
       securityService.getSecurityStatus(user._id, session),
       trustedContactService.getTrustedContacts(user._id),
+      marketService.getMarketIntelligence(),
     ]);
 
   const financial = financialResult.financial;
@@ -464,6 +571,7 @@ async function getOverview(user, session) {
     transactions,
     dashboard,
     ai: aiInsights,
+    market: marketIntel,
     cyber: {
       ...riskData,
       securityStatus,
@@ -475,6 +583,7 @@ async function getOverview(user, session) {
       aiInsights,
       riskData,
       transactions,
+      marketIntel,
     }),
     protection: buildProtectionPolicies({
       financial,
@@ -488,6 +597,7 @@ async function getOverview(user, session) {
       aiInsights,
       riskData,
       financial,
+      marketIntel,
     }),
   };
 }

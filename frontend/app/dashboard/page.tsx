@@ -227,6 +227,11 @@ export default function DashboardPage() {
                   <div>
                     <p className="font-medium text-foreground">{tx.description}</p>
                     <p className="text-xs text-muted-foreground">{tx.relativeDate}</p>
+                    {tx.reviewFlags?.map((flag) => (
+                      <p key={flag.type} className="text-xs text-warning mt-1">
+                        {flag.message}
+                      </p>
+                    ))}
                   </div>
                   <span className="font-semibold text-foreground">
                     {formatCurrency(Math.abs(tx.amount))}

@@ -119,6 +119,15 @@ export default function ActionCenterPage() {
 
                     <p className="text-muted-foreground text-sm mb-4">{action.description}</p>
 
+                    {action.reviewMessage && (
+                      <div className="mb-4 rounded-lg border border-primary/20 bg-primary/5 p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-primary mb-1">
+                          {action.reviewType || 'review'}
+                        </p>
+                        <p className="text-sm text-foreground">{action.reviewMessage}</p>
+                      </div>
+                    )}
+
                     <div className="flex gap-2">
                       <Button size="sm" className="gap-2">
                         Take Action

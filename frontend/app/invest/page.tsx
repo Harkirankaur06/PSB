@@ -83,6 +83,7 @@ export default function InvestPage() {
   const { data, loading, error } = useAppOverview();
   const [selectedRisk, setSelectedRisk] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const formatCurrency = useFormattedCurrency();
 
   if (loading) {
     return (
@@ -118,6 +119,58 @@ export default function InvestPage() {
           <p className="text-muted-foreground">
             AI-ranked opportunities blended with your current goals and cyber posture
           </p>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2 bg-card border border-border rounded-xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">Market Pulse</h2>
+                <p className="text-sm text-muted-foreground">{data.market.headline}</p>
+              </div>
+              <span className="text-xs text-muted-foreground uppercase">
+                Source: {data.market.source}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+              {data.market.indicators.map((indicator) => (
+                <div key={indicator.code} className="rounded-lg border border-border p-4 bg-muted/20">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                    {indicator.name}
+                  </p>
+                  <p className="text-2xl font-semibold text-foreground mt-1">
+                    {indicator.category === 'rates' || indicator.category === 'macro'
+                      ? indicator.value
+                      : formatCurrency(indicator.value)}
+                  </p>
+                  <p
+                    className={`text-sm mt-1 ${
+                      indicator.changePercent > 0
+                        ? 'text-green-600'
+                        : indicator.changePercent < 0
+                          ? 'text-destructive'
+                          : 'text-muted-foreground'
+                    }`}
+                  >
+                    {indicator.changePercent > 0 ? '+' : ''}
+                    {indicator.changePercent}% vs recent close
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-card border border-border rounded-xl p-6">
+            <h2 className="text-lg font-semibold text-foreground mb-4">AI Strategy Notes</h2>
+            <div className="space-y-3">
+              {data.market.recommendations.map((item, index) => (
+                <div key={`${item}-${index}`} className="rounded-lg border border-border p-3 bg-muted/20">
+                  <p className="text-sm text-foreground">{item}</p>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
