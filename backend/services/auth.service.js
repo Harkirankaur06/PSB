@@ -15,6 +15,10 @@ function shouldAutoVerifySecondFactor(user) {
   return !hasPin && !hasWebAuthn;
 }
 
+function getDeviceName(deviceName) {
+  return deviceName || "Unknown Device";
+}
+
 async function signup(data, deviceName) {
   const { name, email, password } = data;
 
@@ -49,7 +53,7 @@ async function signup(data, deviceName) {
   return { user, accessToken, refreshToken, deviceId };
 }
 
-async function login(data, deviceName) {
+async function login(data, deviceName, knownDeviceId = null) {
   const { email, password } = data;
 
   const user = await User.findOne({ email });
@@ -58,13 +62,27 @@ async function login(data, deviceName) {
   const isMatch = await bcrypt.compare(password, user.passwordHash);
   if (!isMatch) throw new Error("Invalid credentials");
 
-  const deviceId = uuidv4();
+  const matchedDevice = knownDeviceId
+    ? user.devices.find((device) => device.deviceId === knownDeviceId)
+    : null;
 
-  user.devices.push({
-    deviceId,
-    deviceName,
-    isTrusted: false
-  });
+  const deviceId = matchedDevice ? matchedDevice.deviceId : uuidv4();
+
+  if (matchedDevice) {
+    matchedDevice.deviceName = getDeviceName(deviceName);
+    matchedDevice.lastUsed = new Date();
+
+    if (matchedDevice.isTrusted) {
+      user.trustScore = Math.min(100, (user.trustScore || 0) + 2);
+    }
+  } else {
+    user.devices.push({
+      deviceId,
+      deviceName: getDeviceName(deviceName),
+      isTrusted: false,
+      lastUsed: new Date(),
+    });
+  }
 
   await user.save();
 

@@ -71,6 +71,10 @@ async function getSecurityStatus(userId, session = null) {
     Boolean(user?.security?.biometricEnabled) &&
     (user?.security?.webAuthnCredentials || []).length > 0;
 
+  const currentDevice = (user?.devices || []).find(
+    (device) => device.deviceId === session?.deviceId
+  );
+
   return {
     hasPin,
     hasBiometric,
@@ -79,6 +83,42 @@ async function getSecurityStatus(userId, session = null) {
     secondFactorVerified: Boolean(session?.secondFactorVerified),
     needsSetup: !hasPin && !hasBiometric,
     requiresVerification: (hasPin || hasBiometric) && !session?.secondFactorVerified,
+    promptTrustDevice: Boolean(currentDevice) && !currentDevice.isTrusted,
+    currentDevice: currentDevice
+      ? {
+          deviceId: currentDevice.deviceId,
+          deviceName: currentDevice.deviceName || "Unknown Device",
+          lastUsed: currentDevice.lastUsed,
+          isTrusted: Boolean(currentDevice.isTrusted),
+        }
+      : null,
+  };
+}
+
+async function trustCurrentDevice(userId, session = null) {
+  const user = await getUser(userId);
+
+  if (!session?.deviceId) {
+    throw new Error("Current session device not found");
+  }
+
+  const device = (user.devices || []).find(
+    (item) => item.deviceId === session.deviceId
+  );
+
+  if (!device) {
+    throw new Error("Device not found on this account");
+  }
+
+  device.isTrusted = true;
+  device.lastUsed = new Date();
+  user.trustScore = Math.min(100, (user.trustScore || 0) + 3);
+  await user.save();
+
+  return {
+    trusted: true,
+    deviceId: device.deviceId,
+    trustScore: user.trustScore,
   };
 }
 
@@ -305,6 +345,7 @@ module.exports = {
   verifyPin,
   enableBiometric,
   getSecurityStatus,
+  trustCurrentDevice,
   generateBiometricRegistrationOptions,
   verifyBiometricRegistration,
   generateBiometricAuthenticationOptions,

@@ -3,6 +3,7 @@ const controller = require("../controllers/security.controller");
 const protect = require("../middleware/auth.middleware");
 
 router.get("/status", protect, controller.getStatus);
+router.post("/trust-device", protect, controller.trustDevice);
 router.post("/create-pin", protect, controller.createPin);
 router.post("/verify-pin", protect, controller.verifyPin);
 router.post("/enable-biometric", protect, controller.enableBiometric);

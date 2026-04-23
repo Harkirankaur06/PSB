@@ -19,7 +19,11 @@ async function signup(req, res) {
 
 async function login(req, res) {
   try {
-    const result = await authService.login(req.body, req.headers["user-agent"]);
+    const result = await authService.login(
+      req.body,
+      req.headers["user-agent"],
+      req.headers["x-device-id"] || null
+    );
      await auditService.logAction({
      userId: result.user._id,
      action: "LOGIN",

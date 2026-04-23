@@ -28,13 +28,28 @@ export function getAuthHeaders(extraHeaders: HeadersInit = {}) {
   return headers;
 }
 
+export function getBaseHeaders(extraHeaders: HeadersInit = {}) {
+  const headers = new Headers(extraHeaders);
+
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  const deviceId = localStorage.getItem('deviceId');
+  if (deviceId && !headers.has('x-device-id')) {
+    headers.set('x-device-id', deviceId);
+  }
+
+  return headers;
+}
+
 export async function apiRequest<T>(
   path: string,
   { auth = true, headers, body, ...options }: ApiRequestOptions = {}
 ): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
-    headers: auth ? getAuthHeaders(headers) : headers,
+    headers: auth ? getAuthHeaders(headers) : getBaseHeaders(headers),
     body,
   });
 

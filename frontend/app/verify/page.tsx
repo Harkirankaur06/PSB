@@ -19,6 +19,13 @@ interface SecurityStatus {
   secondFactorVerified: boolean;
   needsSetup: boolean;
   requiresVerification: boolean;
+  promptTrustDevice?: boolean;
+  currentDevice?: {
+    deviceId: string;
+    deviceName?: string;
+    lastUsed?: string;
+    isTrusted?: boolean;
+  } | null;
 }
 
 function getAuthHeaders() {
@@ -38,6 +45,7 @@ export default function VerifyPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [trustingDevice, setTrustingDevice] = useState(false);
 
   useEffect(() => {
     const fetchStatus = async () => {
@@ -172,6 +180,40 @@ export default function VerifyPage() {
     }
   };
 
+  const handleTrustDevice = async () => {
+    setTrustingDevice(true);
+    setError('');
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/security/trust-device`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Unable to trust this device');
+      }
+
+      setStatus((current) =>
+        current
+          ? {
+              ...current,
+              promptTrustDevice: false,
+              currentDevice: current.currentDevice
+                ? { ...current.currentDevice, isTrusted: true }
+                : current.currentDevice,
+            }
+          : current
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to trust this device.');
+    } finally {
+      setTrustingDevice(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -209,6 +251,35 @@ export default function VerifyPage() {
           )}
 
           <div className="space-y-4">
+            {status?.promptTrustDevice && (
+              <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-3">
+                <div>
+                  <p className="font-medium text-foreground">Trust this device?</p>
+                  <p className="text-sm text-muted-foreground">
+                    {status.currentDevice?.deviceName || 'This device'} is new to your account.
+                    Trusting it helps strengthen future login integrity and reduces friction.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleTrustDevice}
+                    disabled={trustingDevice}
+                    className="flex-1"
+                  >
+                    {trustingDevice ? 'Trusting device...' : 'Trust This Device'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={trustingDevice}
+                    className="flex-1"
+                  >
+                    Not Now
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {status?.hasBiometric && (
               <Button
                 onClick={handleBiometricVerify}

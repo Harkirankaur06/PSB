@@ -44,6 +44,15 @@ async function getStatus(req, res) {
   }
 }
 
+async function trustDevice(req, res) {
+  try {
+    const result = await securityService.trustCurrentDevice(req.user._id, req.session);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
 async function getRegistrationOptions(req, res) {
   try {
     const options = await securityService.generateBiometricRegistrationOptions(
@@ -107,6 +116,7 @@ module.exports = {
   verifyPin,
   enableBiometric,
   getStatus,
+  trustDevice,
   getRegistrationOptions,
   verifyRegistration,
   getAuthenticationOptions,
