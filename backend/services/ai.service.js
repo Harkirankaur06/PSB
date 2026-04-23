@@ -240,6 +240,14 @@ async function generateInsights(userId) {
 }
 
 function buildChatContext(financial, goals, transactions, insightPayload) {
+  if (!financial) {
+    return [
+      "User account data is currently unavailable.",
+      "Use general financial knowledge and explain clearly.",
+      "If the user asks for account-specific advice, state that personal account data is missing and answer with a general framework instead.",
+    ].join("\n");
+  }
+
   const goalsSummary =
     goals.length > 0
       ? goals
@@ -295,8 +303,38 @@ const ALLOWED_SCOPE_TERMS = [
   "mutual fund",
   "stock",
   "stocks",
+  "stock market",
   "etf",
   "bond",
+  "bonds",
+  "equity",
+  "equities",
+  "index fund",
+  "index funds",
+  "crypto",
+  "bitcoin",
+  "ethereum",
+  "gold",
+  "silver",
+  "forex",
+  "currency",
+  "currencies",
+  "tax",
+  "taxes",
+  "insurance",
+  "interest rate",
+  "interest rates",
+  "inflation",
+  "deflation",
+  "recession",
+  "economy",
+  "economic",
+  "market",
+  "markets",
+  "gdp",
+  "central bank",
+  "federal reserve",
+  "rbi",
   "returns",
   "compound",
   "compounding",
@@ -334,28 +372,31 @@ const ALLOWED_SCOPE_TERMS = [
   "banks",
 ];
 
-const BLOCKED_GLOBAL_TERMS = [
-  "world",
-  "global",
-  "news",
-  "today's news",
+const BLOCKED_NON_FINANCE_TERMS = [
   "president",
   "prime minister",
   "war",
   "weather",
   "sports",
   "movie",
+  "movies",
   "celebrity",
-  "bitcoin price",
-  "stock market today",
   "who won",
-  "around the world",
+  "actor",
+  "singer",
+  "cricket",
+  "football",
+  "ipl",
+  "nba",
+  "recipe",
+  "travel",
+  "dating",
 ];
 
 function isInFinanceScope(text) {
   const lower = text.toLowerCase();
   const hasAllowedSignal = ALLOWED_SCOPE_TERMS.some((term) => lower.includes(term));
-  const hasBlockedSignal = BLOCKED_GLOBAL_TERMS.some((term) => lower.includes(term));
+  const hasBlockedSignal = BLOCKED_NON_FINANCE_TERMS.some((term) => lower.includes(term));
 
   if (hasBlockedSignal && !hasAllowedSignal) {
     return false;
@@ -531,7 +572,31 @@ async function chatWithGemini(messages, contextBlock, intent, currentPage) {
 
 function buildLocalFinancialReply({ financial, goals, insightPayload, latestUserMessage }) {
   const lower = latestUserMessage.toLowerCase();
-  const recommendations = insightPayload.recommendations || [];
+  const recommendations = insightPayload?.recommendations || [];
+
+  if (!financial) {
+    if (
+      lower.includes("investment") ||
+      lower.includes("invest") ||
+      lower.includes("stock") ||
+      lower.includes("mutual fund") ||
+      lower.includes("sip") ||
+      lower.includes("etf")
+    ) {
+      return "A strong default investing approach is to first build an emergency fund, then invest regularly through diversified long-term instruments such as broad funds, and only take concentrated bets when you understand the downside. If you want, ask me beginner, moderate, or advanced and I can tailor the explanation.";
+    }
+
+    if (
+      lower.includes("budget") ||
+      lower.includes("saving") ||
+      lower.includes("savings") ||
+      lower.includes("emergency fund")
+    ) {
+      return "A practical money foundation is: cover essentials, keep debt manageable, build an emergency fund, and automate savings before increasing investment risk. I can help you turn that into a step-by-step plan too.";
+    }
+
+    return "I can answer general finance and investment questions even without your account data. For account-specific advice, connect your finances so I can tailor the answer to your numbers.";
+  }
 
   if (
     lower.includes("investment") ||
@@ -600,27 +665,9 @@ async function chatWithAssistant({ userId, provider, messages, currentPage = nul
   const financial = await FinancialData.findOne({ userId });
   const goals = await Goal.find({ userId });
   const transactions = await Transaction.find({ userId }).sort({ createdAt: -1 }).limit(10);
-
-  if (!financial) {
-    return {
-      provider: "scope-guard",
-      model: "local",
-      intent: classification.intent,
-      reply:
-        "I can help you navigate the website right now, but I can't answer account-finance questions yet because no financial data is available for this user.",
-      actions: [
-        {
-          type: "NAVIGATE",
-          target: "/dashboard",
-          label: "Open dashboard",
-          requiresConfirmation: false,
-        },
-      ],
-      guideSteps: [],
-    };
-  }
-
-  const insightPayload = await generateInsights(userId);
+  const insightPayload = financial
+    ? await generateInsights(userId)
+    : { insights: [], recommendations: [], summary: {}, portfolioAssistant: null };
   const contextBlock = buildChatContext(financial, goals, transactions, insightPayload);
   const resolvedProvider = pickProvider(provider);
   const actions =

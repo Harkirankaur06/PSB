@@ -149,7 +149,7 @@ export default function InsightsPage() {
     {
       role: 'assistant',
       content:
-        'Ask about your own finances, broader investing concepts, step-by-step planning, or where to do something in L.E.G.E.N.D.',
+        'Ask about your own finances, global finance topics, investing concepts, step-by-step planning, or where to do something in L.E.G.E.N.D.',
     },
   ]);
 
@@ -243,7 +243,7 @@ export default function InsightsPage() {
                 <div>
                   <h2 className="text-lg font-semibold text-foreground">Insights Chat</h2>
                   <p className="text-sm text-muted-foreground">
-                    One assistant for financial guidance, investing education, and guided navigation.
+                    One assistant for personal finance, global financial knowledge, investing education, and guided navigation.
                   </p>
                 </div>
               </div>
@@ -269,10 +269,10 @@ export default function InsightsPage() {
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  It can discuss your account, explain finance and investment concepts, and still guide you through the app when needed.
+                  It can discuss your account, explain markets and finance concepts, and still guide you through the app when needed.
                 </p>
                 <div className="rounded-xl border border-border bg-background p-3 text-xs text-muted-foreground">
-                  Try: "How should I think about SIPs?", "Help me plan my investments", or "How do I add a trusted contact?".
+                  Try: "How should I think about SIPs?", "What do interest rates do to markets?", or "Help me plan my investments".
                 </div>
               </div>
             </div>
@@ -338,7 +338,7 @@ export default function InsightsPage() {
                 <Input
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="Ask about investments, budgeting, risk, goals, or app navigation"
+                  placeholder="Ask about finance, markets, investments, budgeting, risk, goals, or app navigation"
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' && !event.shiftKey) {
                       event.preventDefault();
