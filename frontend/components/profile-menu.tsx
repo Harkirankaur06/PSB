@@ -7,6 +7,14 @@ import { useUser } from '@/lib/user-context';
 import Link from 'next/link';
 import { useFormattedCurrency, useHeaderData } from '@/lib/app-data';
 
+const FALLBACK_PROFILE = {
+  name: 'Profile',
+  email: 'Loading account...',
+  balance: 0,
+  netWorth: 0,
+  trustScore: '--',
+};
+
 export function ProfileMenu() {
   const [isOpen, setIsOpen] = useState(false);
   const { user, logout } = useUser();
@@ -14,20 +22,22 @@ export function ProfileMenu() {
   const formatCurrency = useFormattedCurrency();
 
   const handleLogout = () => {
+    if (!user) {
+      setIsOpen(false);
+      return;
+    }
+
     logout();
     setIsOpen(false);
-    // In a real app, you would redirect to login page
   };
 
-  if (!user) {
-    return null;
-  }
-
   const profile = data?.profile;
-  const displayName = profile?.name || user.name;
-  const displayEmail = profile?.email || user.email;
-  const displayBalance = profile?.balance ?? user.balance;
-  const displayNetWorth = profile?.netWorth ?? user.netWorth;
+  const displayName = profile?.name || user?.name || FALLBACK_PROFILE.name;
+  const displayEmail = profile?.email || user?.email || FALLBACK_PROFILE.email;
+  const displayBalance = profile?.balance ?? user?.balance ?? FALLBACK_PROFILE.balance;
+  const displayNetWorth = profile?.netWorth ?? user?.netWorth ?? FALLBACK_PROFILE.netWorth;
+  const displayTrustScore =
+    profile?.trustScore !== undefined ? `${profile.trustScore}/100` : `${FALLBACK_PROFILE.trustScore}/100`;
 
   return (
     <div className="relative">
@@ -58,9 +68,7 @@ export function ProfileMenu() {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Trust Score:</span>
-                <span className="font-medium text-foreground">
-                  {profile?.trustScore ?? '--'}/100
-                </span>
+                <span className="font-medium text-foreground">{displayTrustScore}</span>
               </div>
             </div>
           </div>
@@ -81,6 +89,7 @@ export function ProfileMenu() {
               className="w-full justify-start text-destructive hover:text-destructive"
               size="sm"
               onClick={handleLogout}
+              disabled={!user}
             >
               <LogOut className="h-4 w-4 mr-2" />
               Logout
