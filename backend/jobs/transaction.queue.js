@@ -1,8 +1,10 @@
 const { Queue } = require("bullmq");
-const connection = require("../config/redis");
+const { connection, isRedisEnabled } = require("../config/redis");
 
-const transactionQueue = new Queue("transactionQueue", {
-  connection
-});
+const transactionQueue = isRedisEnabled()
+  ? new Queue("transactionQueue", {
+      connection,
+    })
+  : null;
 
 module.exports = transactionQueue;

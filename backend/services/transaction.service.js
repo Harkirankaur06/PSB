@@ -231,11 +231,21 @@ async function processTransaction({
   if (finalDecision === "warn") {
     transaction.status = "warning";
 
-    await transactionQueue.add(
-      "delayedTransaction",
-      { transactionId: transaction._id },
-      { delay: duressModeActive ? 30 * 60 * 1000 : 10 * 60 * 1000 }
-    );
+    if (transactionQueue) {
+      await transactionQueue.add(
+        "delayedTransaction",
+        { transactionId: transaction._id },
+        { delay: duressModeActive ? 30 * 60 * 1000 : 10 * 60 * 1000 }
+      );
+    } else {
+      transaction.metadata = {
+        ...(transaction.metadata || {}),
+        queueFallback: {
+          mode: "no-redis",
+          note: "Delayed review queue is unavailable because Redis is not configured.",
+        },
+      };
+    }
   }
 
   await transaction.save();
