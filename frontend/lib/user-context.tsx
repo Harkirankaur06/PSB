@@ -4,6 +4,7 @@ import React, { createContext, useContext, ReactNode } from 'react';
 import { apiRequest } from '@/lib/api-client';
 
 const INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
+const USER_CACHE_KEY = 'legendUserProfile';
 
 export interface User {
   id: string;
@@ -23,14 +24,43 @@ interface UserContextType {
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
+const DEFAULT_USER: User = {
+  id: 'local-user',
+  name: 'User',
+  email: 'user@example.com',
+  avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=User',
+  balance: 0,
+  netWorth: 0,
+  currency: 'INR',
+};
+
+function getInitialUser() {
+  if (typeof window === 'undefined') {
+    return DEFAULT_USER;
+  }
+
+  const cached = localStorage.getItem(USER_CACHE_KEY);
+
+  if (!cached) {
+    return DEFAULT_USER;
+  }
+
+  try {
+    return JSON.parse(cached) as User;
+  } catch {
+    return DEFAULT_USER;
+  }
+}
+
 export function UserProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = React.useState<User | null>(null);
+  const [user, setUser] = React.useState<User | null>(getInitialUser);
   const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearAuthStorage = React.useCallback(() => {
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('deviceId');
+    localStorage.removeItem(USER_CACHE_KEY);
   }, []);
 
   const logout = React.useCallback(() => {
@@ -61,28 +91,29 @@ export function UserProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        const [profile, overview] = await Promise.all([
-          apiRequest<{
+        const headerData = await apiRequest<{
+          profile: {
             id: string;
             name: string;
             email: string;
-          }>('/api/auth/profile'),
-          apiRequest<{
-            metrics: { netWorth: number };
-            financial: { savings: number };
-          }>('/api/app/overview'),
-        ]);
+            balance: number;
+            netWorth: number;
+          };
+        }>('/api/app/header');
 
-        setUser({
-          id: profile.id,
-          name: profile.name,
-          email: profile.email,
-          balance: overview.financial.savings || 0,
-          netWorth: overview.metrics.netWorth || 0,
+        const nextUser = {
+          id: headerData.profile.id,
+          name: headerData.profile.name,
+          email: headerData.profile.email,
+          balance: headerData.profile.balance || 0,
+          netWorth: headerData.profile.netWorth || 0,
           currency: 'INR',
-        });
+        };
+
+        setUser(nextUser);
+        localStorage.setItem(USER_CACHE_KEY, JSON.stringify(nextUser));
       } catch {
-        setUser(null);
+        setUser((current) => current || DEFAULT_USER);
       }
     };
 
@@ -121,6 +152,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   const updateUser = (newUser: User) => {
     setUser(newUser);
+    localStorage.setItem(USER_CACHE_KEY, JSON.stringify(newUser));
   };
 
   return (

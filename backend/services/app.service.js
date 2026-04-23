@@ -1,5 +1,6 @@
 const User = require("../models/User");
 const RiskLog = require("../models/RiskLog");
+const AuditLog = require("../models/AuditLog");
 const financialService = require("./financial.service");
 const transactionService = require("./transaction.service");
 const riskService = require("./risk.service");
@@ -316,6 +317,91 @@ function buildSecurityFeed({ user, securityStatus, riskData, transactions, logs 
   return feed.sort((a, b) => new Date(b.date) - new Date(a.date));
 }
 
+function formatRelativeTime(dateValue) {
+  const date = new Date(dateValue);
+  const diffMs = Date.now() - date.getTime();
+  const diffMinutes = Math.max(1, Math.floor(diffMs / 60000));
+
+  if (diffMinutes < 60) return `${diffMinutes} minute${diffMinutes > 1 ? "s" : ""} ago`;
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? "s" : ""} ago`;
+
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
+}
+
+function buildHeaderNotifications({ profile, goals, transactions, riskData, auditLogs }) {
+  const notifications = [];
+
+  if ((riskData.summary?.totalBlocked || 0) > 0) {
+    notifications.push({
+      id: "blocked-activity",
+      title: "Security Alert",
+      description: `${riskData.summary.totalBlocked} transaction attempts were blocked by the cyber engine.`,
+      timestamp: formatRelativeTime(new Date()),
+      read: false,
+      type: "security",
+    });
+  }
+
+  const nearestGoal = [...goals]
+    .filter((goal) => goal.deadline)
+    .sort((a, b) => new Date(a.deadline) - new Date(b.deadline))[0];
+
+  if (nearestGoal) {
+    notifications.push({
+      id: `goal-${nearestGoal.id}`,
+      title: "Goal Progress",
+      description: `${nearestGoal.name} is ${nearestGoal.progress}% funded.`,
+      timestamp: nearestGoal.deadline
+        ? `Due ${new Date(nearestGoal.deadline).toLocaleDateString("en-IN")}`
+        : "Goal updated",
+      read: nearestGoal.progress >= 75,
+      type: "goal",
+    });
+  }
+
+  const latestCompletedTransaction = transactions.find((item) => item.status === "completed");
+  if (latestCompletedTransaction) {
+    notifications.push({
+      id: `transaction-${latestCompletedTransaction.id}`,
+      title: "Portfolio Update",
+      description: `${formatCurrencyLabel(
+        latestCompletedTransaction.amount
+      )} moved through ${latestCompletedTransaction.type}.`,
+      timestamp: latestCompletedTransaction.relativeDate,
+      read: false,
+      type: "portfolio",
+    });
+  }
+
+  const latestAudit = auditLogs[0];
+  if (latestAudit) {
+    notifications.push({
+      id: `audit-${latestAudit._id}`,
+      title: "Profile Activity",
+      description: `${profile.name}, your latest account event was ${latestAudit.action}.`,
+      timestamp: formatRelativeTime(latestAudit.createdAt),
+      read: true,
+      type: "account",
+    });
+  }
+
+  if (notifications.length === 0) {
+    notifications.push({
+      id: "welcome",
+      title: "Welcome Back",
+      description: "Your dashboard, profile, and notifications are now powered by live backend data.",
+      timestamp: "just now",
+      read: false,
+      type: "account",
+    });
+  }
+
+  return notifications.slice(0, 6);
+}
+
 async function getOverview(user, session) {
   const [profile, financialResult, transactionsRaw, aiInsights, riskData, securityStatus, contacts] =
     await Promise.all([
@@ -443,8 +529,44 @@ async function getSecurityFeed(user, session) {
   };
 }
 
+async function getHeaderData(user, session) {
+  const [profile, financialResult, transactionDocs, riskData, securityStatus, auditLogs] =
+    await Promise.all([
+      User.findById(user._id),
+      financialService.getFinancialWithGoals(user._id),
+      transactionService.getTransactionHistory(user._id, 10),
+      riskService.getRiskDashboard(user),
+      securityService.getSecurityStatus(user._id, session),
+      AuditLog.find({ userId: user._id }).sort({ createdAt: -1 }).limit(5),
+    ]);
+
+  const goals = buildGoalSummary(financialResult.goals);
+  const transactions = buildTransactionsSummary(transactionDocs);
+
+  return {
+    profile: {
+      id: String(profile._id),
+      name: profile.name,
+      email: profile.email,
+      trustScore: profile.trustScore,
+      devices: profile.devices || [],
+      balance: financialResult.financial.savings || 0,
+      netWorth: financialResult.metrics.netWorth || 0,
+      securityStatus,
+    },
+    notifications: buildHeaderNotifications({
+      profile,
+      goals,
+      transactions,
+      riskData,
+      auditLogs,
+    }),
+  };
+}
+
 module.exports = {
   getOverview,
+  getHeaderData,
   getContacts,
   createContact,
   updateContact,

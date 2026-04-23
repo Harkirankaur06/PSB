@@ -2,50 +2,22 @@
 
 import { Bell, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { HeaderData, useHeaderData } from '@/lib/app-data';
 
-interface Notification {
-  id: string;
-  title: string;
-  description: string;
-  timestamp: string;
-  read: boolean;
-}
-
-const DEFAULT_NOTIFICATIONS: Notification[] = [
-  {
-    id: '1',
-    title: 'Portfolio Update',
-    description: 'Your investment portfolio has grown by 2.3% this month',
-    timestamp: '2 hours ago',
-    read: false,
-  },
-  {
-    id: '2',
-    title: 'Goal Progress',
-    description: 'You are 75% towards your retirement goal',
-    timestamp: '5 hours ago',
-    read: false,
-  },
-  {
-    id: '3',
-    title: 'Market Alert',
-    description: 'Technology sector shows strong performance',
-    timestamp: '1 day ago',
-    read: true,
-  },
-  {
-    id: '4',
-    title: 'Security Update',
-    description: 'Your account security settings have been updated',
-    timestamp: '3 days ago',
-    read: true,
-  },
-];
+type Notification = HeaderData['notifications'][number];
 
 export function NotificationMenu() {
-  const [notifications, setNotifications] = useState<Notification[]>(DEFAULT_NOTIFICATIONS);
+  const { data } = useHeaderData();
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    if (data?.notifications) {
+      setNotifications(data.notifications);
+    }
+  }, [data]);
+
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   const handleMarkAllAsRead = () => {

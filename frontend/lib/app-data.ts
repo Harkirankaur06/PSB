@@ -181,6 +181,40 @@ export interface AppSecurityFeed {
   }>;
 }
 
+export interface HeaderData {
+  profile: {
+    id: string;
+    name: string;
+    email: string;
+    trustScore: number;
+    devices: Array<{
+      deviceId: string;
+      deviceName?: string;
+      lastUsed?: string;
+      isTrusted?: boolean;
+    }>;
+    balance: number;
+    netWorth: number;
+    securityStatus: {
+      hasPin: boolean;
+      hasBiometric: boolean;
+      biometricEnabled: boolean;
+      hasWebAuthnCredentials: boolean;
+      secondFactorVerified: boolean;
+      needsSetup: boolean;
+      requiresVerification: boolean;
+    };
+  };
+  notifications: Array<{
+    id: string;
+    title: string;
+    description: string;
+    timestamp: string;
+    read: boolean;
+    type: string;
+  }>;
+}
+
 export function useAppOverview() {
   const [data, setData] = useState<AppOverview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -265,6 +299,51 @@ export function useSecurityFeed(enabled = true) {
   }, [enabled]);
 
   return { data, loading, error };
+}
+
+export function useHeaderData(enabled = true) {
+  const [data, setData] = useState<HeaderData | null>(null);
+  const [loading, setLoading] = useState(enabled);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
+    let active = true;
+
+    async function loadHeaderData() {
+      try {
+        const response = await apiRequest<HeaderData>('/api/app/header');
+
+        if (!active) {
+          return;
+        }
+
+        setData(response);
+        setError(null);
+      } catch (err) {
+        if (!active) {
+          return;
+        }
+
+        setError(err instanceof Error ? err.message : 'Failed to load header data.');
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadHeaderData();
+
+    return () => {
+      active = false;
+    };
+  }, [enabled]);
+
+  return { data, loading, error, setData };
 }
 
 export function useFormattedCurrency() {

@@ -9,6 +9,15 @@ async function getOverview(req, res) {
   }
 }
 
+async function getHeaderData(req, res) {
+  try {
+    const data = await appService.getHeaderData(req.user, req.session);
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
 async function getContacts(req, res) {
   try {
     const contacts = await appService.getContacts(req.user._id);
@@ -70,6 +79,7 @@ async function getSecurityFeed(req, res) {
 
 module.exports = {
   getOverview,
+  getHeaderData,
   getContacts,
   createContact,
   updateContact,

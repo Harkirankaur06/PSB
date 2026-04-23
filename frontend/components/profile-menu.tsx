@@ -5,10 +5,13 @@ import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { useUser } from '@/lib/user-context';
 import Link from 'next/link';
+import { useFormattedCurrency, useHeaderData } from '@/lib/app-data';
 
 export function ProfileMenu() {
   const [isOpen, setIsOpen] = useState(false);
   const { user, logout } = useUser();
+  const { data } = useHeaderData(Boolean(user));
+  const formatCurrency = useFormattedCurrency();
 
   const handleLogout = () => {
     logout();
@@ -19,6 +22,12 @@ export function ProfileMenu() {
   if (!user) {
     return null;
   }
+
+  const profile = data?.profile;
+  const displayName = profile?.name || user.name;
+  const displayEmail = profile?.email || user.email;
+  const displayBalance = profile?.balance ?? user.balance;
+  const displayNetWorth = profile?.netWorth ?? user.netWorth;
 
   return (
     <div className="relative">
@@ -36,16 +45,22 @@ export function ProfileMenu() {
       {isOpen && (
         <div className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-lg shadow-lg z-50">
           <div className="p-4 border-b border-border">
-            <p className="font-semibold text-foreground">{user.name}</p>
-            <p className="text-sm text-muted-foreground">{user.email}</p>
+            <p className="font-semibold text-foreground">{displayName}</p>
+            <p className="text-sm text-muted-foreground">{displayEmail}</p>
             <div className="mt-3 pt-3 border-t border-border space-y-1">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Balance:</span>
-                <span className="font-medium">${user.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                <span className="font-medium">{formatCurrency(displayBalance)}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Net Worth:</span>
-                <span className="font-medium text-secondary">${user.netWorth.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                <span className="font-medium text-secondary">{formatCurrency(displayNetWorth)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Trust Score:</span>
+                <span className="font-medium text-foreground">
+                  {profile?.trustScore ?? '--'}/100
+                </span>
               </div>
             </div>
           </div>

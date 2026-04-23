@@ -5,6 +5,7 @@ const controller = require("../controllers/app.controller");
 const router = express.Router();
 
 router.get("/overview", protect, controller.getOverview);
+router.get("/header", protect, controller.getHeaderData);
 router.get("/contacts", protect, controller.getContacts);
 router.post("/contacts", protect, controller.createContact);
 router.put("/contacts/:id", protect, controller.updateContact);
