@@ -1,11 +1,21 @@
 'use client';
 
+import { useState } from 'react';
 import { MainLayout } from '@/components/main-layout';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { Input } from '@/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Plus, Edit2, Trash2, Target } from 'lucide-react';
-import { useAppOverview, useFormattedCurrency } from '@/lib/app-data';
+import { AppGoal, AppOverview, useAppOverview, useFormattedCurrency } from '@/lib/app-data';
 import { apiRequest } from '@/lib/api-client';
 
 function buildGoalDescription(goal: {
@@ -33,22 +43,105 @@ function buildGoalDescription(goal: {
 export default function GoalsPage() {
   const { data, loading, error, setData } = useAppOverview();
   const formatCurrency = useFormattedCurrency();
+  const [formOpen, setFormOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState('');
+  const [selectedGoal, setSelectedGoal] = useState<AppGoal | null>(null);
+  const [form, setForm] = useState({
+    id: '',
+    name: '',
+    target: '',
+    current: '',
+    deadline: '',
+  });
+
+  const refreshOverview = async () => {
+    const overview = await apiRequest<AppOverview>('/api/app/overview');
+    setData(overview);
+    window.dispatchEvent(new Event('legend-security-refresh'));
+  };
+
+  const openCreateDialog = () => {
+    setSelectedGoal(null);
+    setStatus('');
+    setForm({
+      id: '',
+      name: '',
+      target: '',
+      current: '',
+      deadline: '',
+    });
+    setFormOpen(true);
+  };
+
+  const openEditDialog = (goal: AppGoal) => {
+    setSelectedGoal(goal);
+    setStatus('');
+    setForm({
+      id: goal.id,
+      name: goal.name,
+      target: String(goal.target),
+      current: String(goal.current),
+      deadline: goal.deadline ? new Date(goal.deadline).toISOString().slice(0, 10) : '',
+    });
+    setFormOpen(true);
+  };
+
+  const openDetailsDialog = (goal: AppGoal) => {
+    setSelectedGoal(goal);
+    setDetailsOpen(true);
+  };
+
+  const saveGoal = async () => {
+    const target = Number(form.target);
+    const current = Number(form.current || 0);
+
+    if (!form.name.trim() || !target || target <= 0 || !form.deadline) {
+      setStatus('Enter a goal name, positive target amount, and deadline.');
+      return;
+    }
+
+    setSaving(true);
+    setStatus('');
+
+    try {
+      if (form.id) {
+        await apiRequest(`/api/goals/${form.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            title: form.name.trim(),
+            targetAmount: target,
+            currentAmount: current,
+            deadline: form.deadline,
+          }),
+        });
+      } else {
+        await apiRequest('/api/goals', {
+          method: 'POST',
+          body: JSON.stringify({
+            title: form.name.trim(),
+            targetAmount: target,
+            currentAmount: current,
+            deadline: form.deadline,
+          }),
+        });
+      }
+
+      await refreshOverview();
+      setFormOpen(false);
+      setStatus('');
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'Unable to save goal.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const deleteGoal = async (id: string) => {
     try {
       await apiRequest(`/api/goals/${id}`, { method: 'DELETE' });
-      setData((current) =>
-        current
-          ? {
-              ...current,
-              goals: current.goals.filter((goal) => goal.id !== id),
-              dashboard: {
-                ...current.dashboard,
-                goals: current.dashboard.goals.filter((goal) => goal.id !== id),
-              },
-            }
-          : current
-      );
+      await refreshOverview();
     } catch (err) {
       console.error('Delete goal failed', err);
     }
@@ -81,7 +174,7 @@ export default function GoalsPage() {
             </p>
           </div>
 
-          <Button className="gap-2 bg-primary hover:bg-primary/90">
+          <Button className="gap-2 bg-primary hover:bg-primary/90" onClick={openCreateDialog}>
             <Plus className="h-4 w-4" />
             New Goal
           </Button>
@@ -106,7 +199,12 @@ export default function GoalsPage() {
                 </div>
 
                 <div className="flex gap-2">
-                  <Button size="icon" variant="ghost" className="h-8 w-8">
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8"
+                    onClick={() => openEditDialog(goal)}
+                  >
                     <Edit2 className="h-4 w-4" />
                   </Button>
                   <Button
@@ -143,7 +241,12 @@ export default function GoalsPage() {
                   <p className="text-xs text-muted-foreground">{buildGoalDescription(goal)}</p>
                 </div>
 
-                <Button variant="outline" className="w-full" size="sm">
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  size="sm"
+                  onClick={() => openDetailsDialog(goal)}
+                >
                   View Details
                 </Button>
               </div>
@@ -180,6 +283,137 @@ export default function GoalsPage() {
           </div>
         </Card>
       </div>
+
+      <Dialog open={formOpen} onOpenChange={setFormOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{form.id ? 'Edit Goal' : 'Create Goal'}</DialogTitle>
+            <DialogDescription>
+              Set a target, current saved amount, and deadline to keep your planning on track.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-foreground">Goal name</label>
+              <Input
+                value={form.name}
+                onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+                placeholder="Example: House Down Payment"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-foreground">Target amount</label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={form.target}
+                  onChange={(event) => setForm((current) => ({ ...current, target: event.target.value }))}
+                  placeholder="500000"
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-foreground">Already saved</label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={form.current}
+                  onChange={(event) => setForm((current) => ({ ...current, current: event.target.value }))}
+                  placeholder="50000"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-foreground">Deadline</label>
+              <Input
+                type="date"
+                value={form.deadline}
+                onChange={(event) => setForm((current) => ({ ...current, deadline: event.target.value }))}
+              />
+            </div>
+
+            {status && <p className="text-sm text-primary">{status}</p>}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFormOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={saveGoal} disabled={saving}>
+              {saving ? 'Saving...' : form.id ? 'Update Goal' : 'Create Goal'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{selectedGoal?.name || 'Goal details'}</DialogTitle>
+            <DialogDescription>
+              Review progress, target, and the current AI guidance for this goal.
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedGoal && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="rounded-lg bg-muted/40 p-4">
+                  <p className="text-xs text-muted-foreground">Current saved</p>
+                  <p className="mt-2 text-lg font-semibold text-foreground">
+                    {formatCurrency(selectedGoal.current)}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-muted/40 p-4">
+                  <p className="text-xs text-muted-foreground">Target</p>
+                  <p className="mt-2 text-lg font-semibold text-foreground">
+                    {formatCurrency(selectedGoal.target)}
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-2 flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Progress</span>
+                  <span className="font-medium text-foreground">
+                    {selectedGoal.progress.toFixed(1)}%
+                  </span>
+                </div>
+                <Progress value={selectedGoal.progress} className="h-2" />
+              </div>
+
+              <div className="rounded-lg border border-border bg-background p-4">
+                <p className="text-sm text-foreground">{buildGoalDescription(selectedGoal)}</p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Deadline:{' '}
+                  {selectedGoal.deadline
+                    ? new Date(selectedGoal.deadline).toLocaleDateString()
+                    : 'Not set'}
+                </p>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDetailsOpen(false)}>
+              Close
+            </Button>
+            {selectedGoal && (
+              <Button
+                onClick={() => {
+                  setDetailsOpen(false);
+                  openEditDialog(selectedGoal);
+                }}
+              >
+                Edit Goal
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </MainLayout>
   );
 }

@@ -364,6 +364,97 @@ async function sendDuressResolutionOtp(userId, session = null, ipAddress = null)
   };
 }
 
+async function sendTransactionOtp(userId, session = null, ipAddress = null) {
+  const user = await getUser(userId);
+
+  if (!session?.deviceId) {
+    throw new Error("Current session device not found");
+  }
+
+  const device = (user.devices || []).find((item) => item.deviceId === session.deviceId);
+  const otp = generateOtpCode();
+  const otpHash = await bcrypt.hash(otp, 10);
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+  await OtpToken.findOneAndUpdate(
+    {
+      userId,
+      deviceId: session.deviceId,
+      purpose: "transaction_verification",
+    },
+    {
+      userId,
+      deviceId: session.deviceId,
+      purpose: "transaction_verification",
+      otpHash,
+      expiresAt,
+      consumedAt: null,
+      attempts: 0,
+    },
+    { upsert: true, new: true }
+  );
+
+  const emailResult = await emailService.sendOtpEmail({
+    email: user.email,
+    otp,
+    deviceName: device?.deviceName || "investment approval",
+  });
+
+  await auditService.logAction({
+    userId,
+    action: "TRANSACTION_OTP_SENT",
+    ipAddress,
+    deviceId: session.deviceId,
+    metadata: {
+      purpose: "transaction_verification",
+      deliveryMode: emailResult.mode,
+    },
+  });
+
+  return {
+    sent: true,
+    expiresAt,
+    deliveryMode: emailResult.mode,
+  };
+}
+
+async function verifyTransactionOtp(userId, session = null, otp) {
+  if (!session?.deviceId) {
+    throw new Error("Current session device not found");
+  }
+
+  const record = await OtpToken.findOne({
+    userId,
+    deviceId: session.deviceId,
+    purpose: "transaction_verification",
+  });
+
+  if (!record) {
+    throw new Error("Request a transaction OTP before confirming this action");
+  }
+
+  if (record.consumedAt) {
+    throw new Error("Transaction OTP has already been used");
+  }
+
+  if (record.expiresAt.getTime() < Date.now()) {
+    throw new Error("Transaction OTP has expired");
+  }
+
+  record.attempts += 1;
+  const valid = await bcrypt.compare(String(otp || ""), record.otpHash);
+
+  if (!valid) {
+    await record.save();
+    throw new Error("Invalid transaction OTP");
+  }
+
+  record.consumedAt = new Date();
+  await record.save();
+
+  return true;
+}
+
 async function resolvePrivateSession(
   userId,
   session = null,
@@ -606,27 +697,37 @@ async function evaluateTransactionAuthorization({
   userId,
   amount,
   accountAmount,
+  type,
   pin,
+  otp,
   otpVerified = false,
   biometricVerified = false,
+  session = null,
 }) {
   const user = await getUser(userId);
   const thresholdAmount = accountAmount > 0 ? accountAmount * 0.2 : 0;
   const requiresStepUp = thresholdAmount > 0 && amount >= thresholdAmount;
+  const isInvestmentFlow = ["invest", "sip", "rebalance"].includes(type);
+  const requiresOtpForFlow = requiresStepUp || isInvestmentFlow;
   const biometricEnabled =
     Boolean(user?.security?.biometricEnabled) &&
     (user?.security?.webAuthnCredentials || []).length > 0;
 
-  if (requiresStepUp) {
+  if (requiresOtpForFlow) {
     const pinValid = pin ? await verifyPin(userId, pin) : false;
+    const otpValid =
+      pinValid &&
+      (otpVerified || (otp ? await verifyTransactionOtp(userId, session, otp) : false));
 
-    if (!pinValid || !otpVerified) {
+    if (!pinValid || !otpValid) {
       return {
         allowed: false,
         requiresStepUp: true,
         thresholdAmount,
         reason:
-          "Large transactions of 20% or more of account balance require both PIN and OTP verification.",
+          isInvestmentFlow
+            ? "Investment actions require both PIN and OTP verification before money is committed."
+            : "Large transactions of 20% or more of account balance require both PIN and OTP verification.",
       };
     }
 
@@ -689,6 +790,8 @@ module.exports = {
   sendDeviceOtp,
   verifyDeviceOtp,
   sendDuressResolutionOtp,
+  sendTransactionOtp,
+  verifyTransactionOtp,
   resolvePrivateSession,
   generateBiometricRegistrationOptions,
   verifyBiometricRegistration,

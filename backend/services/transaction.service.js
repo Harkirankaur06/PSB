@@ -5,7 +5,87 @@ const auditService = require("./audit.service");
 const financialService = require("./financial.service");
 const securityService = require("./security.service");
 const User = require("../models/User");
+const Goal = require("../models/Goal");
 const { generateSeededTransactions } = require("../mock/fakeBankData");
+
+function getExecutionMode() {
+  return process.env.LIVE_INVESTMENT_PROVIDER ? "live-ready" : "simulated";
+}
+
+async function applyCompletedTransactionEffects(transaction) {
+  if (!transaction || transaction.status !== "completed") {
+    return transaction;
+  }
+
+  if (transaction.metadata?.execution?.appliedAt) {
+    return transaction;
+  }
+
+  const financial = await financialService.getFinancialData(transaction.userId);
+  const amount = Number(transaction.amount || 0);
+  const metadata = transaction.metadata || {};
+
+  if (transaction.type === "transfer") {
+    financial.savings = Math.max(0, (financial.savings || 0) - amount);
+  }
+
+  if (transaction.type === "invest" || transaction.type === "sip") {
+    financial.savings = Math.max(0, (financial.savings || 0) - amount);
+    financial.investments = (financial.investments || 0) + amount;
+
+    if (metadata.goalId) {
+      const goal = await Goal.findOne({
+        _id: metadata.goalId,
+        userId: transaction.userId,
+      });
+
+      if (goal) {
+        goal.currentAmount = Math.min(
+          goal.targetAmount,
+          (goal.currentAmount || 0) + amount
+        );
+        if ((financial.income || 0) > 0) {
+          const monthlySavings = Math.max(
+            0,
+            (financial.income || 0) - (financial.expenses || 0)
+          );
+          if (monthlySavings > 0) {
+            const remainingAmount = Math.max(0, goal.targetAmount - goal.currentAmount);
+            const monthsRequired = Math.ceil(remainingAmount / monthlySavings);
+            const predictedCompletion = new Date();
+            predictedCompletion.setMonth(predictedCompletion.getMonth() + monthsRequired);
+            goal.predictedCompletion = predictedCompletion;
+          }
+        }
+        goal.progressPercentage =
+          goal.targetAmount > 0 ? Number(((goal.currentAmount / goal.targetAmount) * 100).toFixed(2)) : 0;
+        await goal.save();
+      }
+    }
+  }
+
+  if (transaction.type === "rebalance") {
+    transaction.metadata = {
+      ...metadata,
+      rebalanceSummary:
+        metadata.rebalanceSummary ||
+        "Portfolio mix was rebalanced without changing total invested capital.",
+    };
+  }
+
+  await financial.save();
+
+  transaction.metadata = {
+    ...transaction.metadata,
+    execution: {
+      mode: getExecutionMode(),
+      appliedAt: new Date(),
+    },
+  };
+  await transaction.save();
+
+  return transaction;
+}
 
 async function processTransaction({
   user,
@@ -19,13 +99,22 @@ async function processTransaction({
   const financial = await financialService.getFinancialData(user._id);
   const accountAmount = financial.savings || 0;
   const securityMetadata = metadata.security || {};
+  const sanitizedMetadata = {
+    ...metadata,
+    security: metadata.security
+      ? {
+          otpVerified: Boolean(metadata.security.otpVerified),
+          biometricVerified: Boolean(metadata.security.biometricVerified),
+        }
+      : undefined,
+  };
 
   const transaction = await Transaction.create({
     userId: user._id,
     type,
     amount,
     status: "pending",
-    metadata,
+    metadata: sanitizedMetadata,
   });
 
   const {
@@ -42,7 +131,7 @@ async function processTransaction({
     user,
     transaction,
     deviceId,
-    metadata,
+    metadata: sanitizedMetadata,
     accountBalance: accountAmount,
   });
 
@@ -50,9 +139,12 @@ async function processTransaction({
     userId: user._id,
     amount,
     accountAmount,
+    type,
     pin: securityMetadata.pin,
+    otp: securityMetadata.otp,
     otpVerified: Boolean(securityMetadata.otpVerified),
     biometricVerified: Boolean(securityMetadata.biometricVerified),
+    session,
   });
 
   let finalRiskScore = riskScore;
@@ -147,6 +239,9 @@ async function processTransaction({
   }
 
   await transaction.save();
+  if (transaction.status === "completed") {
+    await applyCompletedTransactionEffects(transaction);
+  }
 
   await auditService.logAction({
     userId: user._id,
@@ -161,6 +256,7 @@ async function processTransaction({
       signals: finalSignals,
       thresholdAmount: authorizationCheck.thresholdAmount,
       authMode: authorizationCheck.authMode || null,
+      executionMode: getExecutionMode(),
       duressMode: duressModeActive,
     },
   });
@@ -184,8 +280,13 @@ async function processTransaction({
 
   await user.save();
 
+  const latestTransaction =
+    transaction.status === "completed"
+      ? await Transaction.findById(transaction._id)
+      : transaction;
+
   return {
-    transaction,
+    transaction: latestTransaction,
     riskScore: finalRiskScore,
     riskLevel: finalRiskLevel,
     decision: finalDecision,
@@ -217,4 +318,4 @@ async function getTransactionHistory(userId, limit = null) {
   return await query;
 }
 
-module.exports = { processTransaction, getTransactionHistory };
+module.exports = { processTransaction, getTransactionHistory, applyCompletedTransactionEffects };

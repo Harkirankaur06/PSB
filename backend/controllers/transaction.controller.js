@@ -1,5 +1,6 @@
 const {getTransactionHistory}= require("../services/transaction.service");
 const transactionService = require("../services/transaction.service");
+const Transaction = require("../models/Transaction");
 
 async function handleTransaction(req, res, forcedType) {
   try {

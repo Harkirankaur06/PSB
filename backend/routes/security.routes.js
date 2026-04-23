@@ -7,6 +7,7 @@ router.post("/private-session", protect, controller.activatePrivateSession);
 router.post("/trust-device", protect, controller.trustDevice);
 router.post("/otp/send", protect, controller.sendOtp);
 router.post("/otp/verify", protect, controller.verifyOtp);
+router.post("/transaction-otp/send", protect, controller.sendTransactionOtp);
 router.post("/duress-resolution/send-otp", protect, controller.sendDuressResolutionOtp);
 router.post("/duress-resolution/resolve", protect, controller.resolvePrivateSession);
 router.post("/create-pin", protect, controller.createPin);

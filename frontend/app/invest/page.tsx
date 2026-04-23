@@ -3,13 +3,25 @@
 import { MainLayout } from '@/components/main-layout';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
+import { Input } from '@/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Star, ArrowRight, Filter } from 'lucide-react';
 import { AppOverview, useAppOverview, useFormattedCurrency } from '@/lib/app-data';
+import { apiRequest } from '@/lib/api-client';
 
 const OpportunityCard = ({
   opportunity,
+  onOpen,
 }: {
   opportunity: AppOverview['opportunities'][number];
+  onOpen: (opportunity: AppOverview['opportunities'][number]) => void;
 }) => {
   const formatCurrency = useFormattedCurrency();
 
@@ -71,8 +83,11 @@ const OpportunityCard = ({
         <p className="text-xs text-muted-foreground">Source: {opportunity.source}</p>
       </div>
 
-      <Button className="w-full gap-2 group-hover:translate-x-1 transition-transform">
-        View Details
+      <Button
+        className="w-full gap-2 group-hover:translate-x-1 transition-transform"
+        onClick={() => onOpen(opportunity)}
+      >
+        Open Order Ticket
         <ArrowRight className="h-4 w-4" />
       </Button>
     </div>
@@ -80,10 +95,150 @@ const OpportunityCard = ({
 };
 
 export default function InvestPage() {
-  const { data, loading, error } = useAppOverview();
+  const { data, loading, error, setData } = useAppOverview();
   const [selectedRisk, setSelectedRisk] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [orderOpen, setOrderOpen] = useState(false);
+  const [otpLoading, setOtpLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [orderStatus, setOrderStatus] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [selectedOpportunity, setSelectedOpportunity] = useState<AppOverview['opportunities'][number] | null>(null);
+  const [orderForm, setOrderForm] = useState({
+    amount: '',
+    type: 'invest',
+    goalId: '',
+    pin: '',
+    otp: '',
+    notes: '',
+  });
   const formatCurrency = useFormattedCurrency();
+
+  const refreshOverview = async () => {
+    const overview = await apiRequest<AppOverview>('/api/app/overview');
+    setData(overview);
+    window.dispatchEvent(new Event('legend-security-refresh'));
+  };
+
+  const openOrderTicket = (opportunity: AppOverview['opportunities'][number]) => {
+    setSelectedOpportunity(opportunity);
+    setOrderStatus('');
+    setOtpSent(false);
+    setOrderForm({
+      amount: String(opportunity.minimumInvestment),
+      type: opportunity.category.toLowerCase().includes('sip') ? 'sip' : 'invest',
+      goalId: data?.goals[0]?.id || '',
+      pin: '',
+      otp: '',
+      notes: '',
+    });
+    setOrderOpen(true);
+  };
+
+  const sendOrderOtp = async () => {
+    setOtpLoading(true);
+    setOrderStatus('');
+
+    try {
+      const response = await apiRequest<{ deliveryMode: string }>('/api/security/transaction-otp/send', {
+        method: 'POST',
+      });
+      setOtpSent(true);
+      setOrderStatus(
+        response.deliveryMode === 'smtp'
+          ? 'OTP sent for transaction approval.'
+          : 'OTP generated in fallback mode. Check backend logs if email is not configured.'
+      );
+    } catch (err) {
+      setOrderStatus(err instanceof Error ? err.message : 'Unable to send transaction OTP.');
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const submitOrder = async () => {
+    if (!selectedOpportunity) {
+      return;
+    }
+
+    const amount = Number(orderForm.amount);
+    if (!amount || amount < selectedOpportunity.minimumInvestment) {
+      setOrderStatus(
+        `Enter an amount of at least ${formatCurrency(selectedOpportunity.minimumInvestment)}.`
+      );
+      return;
+    }
+
+    if (orderForm.pin.length !== 4 || orderForm.otp.length !== 6) {
+      setOrderStatus('Enter your 4-digit PIN and 6-digit OTP to confirm this investment.');
+      return;
+    }
+
+    setSubmitting(true);
+    setOrderStatus('');
+
+    try {
+      const endpoint =
+        orderForm.type === 'sip'
+          ? '/api/transaction/sip'
+          : orderForm.type === 'rebalance'
+            ? '/api/transaction'
+            : '/api/transaction/invest';
+      const response = await apiRequest<{
+        decision: string;
+        riskScore: number;
+        transaction: {
+          status: string;
+          metadata?: {
+            execution?: {
+              mode?: string;
+            };
+          };
+        };
+      }>(endpoint, {
+        method: 'POST',
+        body: JSON.stringify({
+          type: orderForm.type,
+          amount,
+          metadata: {
+            opportunityId: selectedOpportunity.id,
+            opportunityName: selectedOpportunity.name,
+            category: selectedOpportunity.category,
+            notes: orderForm.notes,
+            goalId: orderForm.goalId || undefined,
+            security: {
+              pin: orderForm.pin,
+              otp: orderForm.otp,
+            },
+          },
+        }),
+      });
+
+      await refreshOverview();
+
+      const executionMode =
+        response.transaction.metadata?.execution?.mode === 'live-ready'
+          ? 'live-ready'
+          : 'simulated';
+
+      setOrderStatus(
+        response.transaction.status === 'completed'
+          ? `Investment submitted successfully. Execution mode: ${executionMode}.`
+          : response.transaction.status === 'warning'
+            ? 'Investment entered review and will complete after the protection delay.'
+            : 'Investment was blocked by the protection engine. Review security inputs and try again.'
+      );
+
+      if (response.transaction.status === 'completed' || response.transaction.status === 'warning') {
+        setOtpSent(false);
+        setOrderForm((current) => ({ ...current, pin: '', otp: '', notes: '' }));
+      }
+    } catch (err) {
+      setOrderStatus(err instanceof Error ? err.message : 'Unable to submit investment.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -240,7 +395,11 @@ export default function InvestPage() {
             <div className="grid grid-cols-1 gap-6">
               {filteredOpportunities.length > 0 ? (
                 filteredOpportunities.map((opportunity) => (
-                  <OpportunityCard key={opportunity.id} opportunity={opportunity} />
+                  <OpportunityCard
+                    key={opportunity.id}
+                    opportunity={opportunity}
+                    onOpen={openOrderTicket}
+                  />
                 ))
               ) : (
                 <div className="text-center py-12">
@@ -251,6 +410,141 @@ export default function InvestPage() {
           </div>
         </div>
       </div>
+
+      <Dialog open={orderOpen} onOpenChange={setOrderOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{selectedOpportunity?.name || 'Order ticket'}</DialogTitle>
+            <DialogDescription>
+              Confirm amount, request a transaction OTP, then submit with your PIN and OTP.
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedOpportunity && (
+            <div className="space-y-4">
+              <div className="rounded-lg border border-border bg-muted/20 p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">{selectedOpportunity.category}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Expected return {selectedOpportunity.expectedReturn}% | Min. investment{' '}
+                      {formatCurrency(selectedOpportunity.minimumInvestment)}
+                    </p>
+                  </div>
+                  <span className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Execution: simulated now, live-ready later
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-foreground">Order type</label>
+                  <select
+                    value={orderForm.type}
+                    onChange={(event) =>
+                      setOrderForm((current) => ({ ...current, type: event.target.value }))
+                    }
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    <option value="invest">Direct invest</option>
+                    <option value="sip">SIP</option>
+                    <option value="rebalance">Rebalance</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-foreground">Amount</label>
+                  <Input
+                    type="number"
+                    min={selectedOpportunity.minimumInvestment}
+                    value={orderForm.amount}
+                    onChange={(event) =>
+                      setOrderForm((current) => ({ ...current, amount: event.target.value }))
+                    }
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-foreground">Link to goal</label>
+                <select
+                  value={orderForm.goalId}
+                  onChange={(event) =>
+                    setOrderForm((current) => ({ ...current, goalId: event.target.value }))
+                  }
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="">Do not link to a goal</option>
+                  {data.goals.map((goal) => (
+                    <option key={goal.id} value={goal.id}>
+                      {goal.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-foreground">Notes</label>
+                <Input
+                  value={orderForm.notes}
+                  onChange={(event) =>
+                    setOrderForm((current) => ({ ...current, notes: event.target.value }))
+                  }
+                  placeholder="Optional note for this order"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto]">
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={orderForm.otp}
+                  onChange={(event) =>
+                    setOrderForm((current) => ({
+                      ...current,
+                      otp: event.target.value.replace(/\D/g, '').slice(0, 6),
+                    }))
+                  }
+                  placeholder="6-digit OTP"
+                />
+                <Button variant="outline" onClick={sendOrderOtp} disabled={otpLoading}>
+                  {otpLoading ? 'Sending OTP...' : otpSent ? 'Resend OTP' : 'Send OTP'}
+                </Button>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-foreground">4-digit PIN</label>
+                <Input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={4}
+                  value={orderForm.pin}
+                  onChange={(event) =>
+                    setOrderForm((current) => ({
+                      ...current,
+                      pin: event.target.value.replace(/\D/g, '').slice(0, 4),
+                    }))
+                  }
+                  placeholder="Enter PIN"
+                />
+              </div>
+
+              {orderStatus && <p className="text-sm text-foreground">{orderStatus}</p>}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOrderOpen(false)}>
+              Close
+            </Button>
+            <Button onClick={submitOrder} disabled={submitting}>
+              {submitting ? 'Submitting...' : 'Confirm Investment'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </MainLayout>
   );
 }

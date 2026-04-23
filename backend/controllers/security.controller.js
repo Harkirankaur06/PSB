@@ -118,6 +118,19 @@ async function sendDuressResolutionOtp(req, res) {
   }
 }
 
+async function sendTransactionOtp(req, res) {
+  try {
+    const result = await securityService.sendTransactionOtp(
+      req.user._id,
+      req.session,
+      req.ip
+    );
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
 async function resolvePrivateSession(req, res) {
   try {
     const result = await securityService.resolvePrivateSession(
@@ -201,6 +214,7 @@ module.exports = {
   sendOtp,
   verifyOtp,
   sendDuressResolutionOtp,
+  sendTransactionOtp,
   resolvePrivateSession,
   getRegistrationOptions,
   verifyRegistration,

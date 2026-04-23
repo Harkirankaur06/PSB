@@ -1,6 +1,7 @@
 const { Worker } = require("bullmq");
 const connection = require("../config/redis");
 const Transaction = require("../models/Transaction");
+const { applyCompletedTransactionEffects } = require("../services/transaction.service");
 
 const worker = new Worker(
   "transactionQueue",
@@ -17,6 +18,7 @@ const worker = new Worker(
 
     transaction.status = "completed";
     await transaction.save();
+    await applyCompletedTransactionEffects(transaction);
 
     console.log("Transaction auto-executed:", transactionId);
   },
