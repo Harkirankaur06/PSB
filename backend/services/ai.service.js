@@ -243,8 +243,9 @@ function buildChatContext(financial, goals, transactions, insightPayload) {
   if (!financial) {
     return [
       "User account data is currently unavailable.",
-      "Use general financial knowledge and explain clearly.",
-      "If the user asks for account-specific advice, state that personal account data is missing and answer with a general framework instead.",
+      "Use conversational tone and be helpful. Explain financial concepts clearly.",
+      "If the user asks for account-specific advice, explain that personal data is missing and offer general guidance.",
+      "Always be friendly, encouraging, and supportive!",
     ].join("\n");
   }
 
@@ -252,124 +253,56 @@ function buildChatContext(financial, goals, transactions, insightPayload) {
     goals.length > 0
       ? goals
           .slice(0, 3)
-          .map((goal) => `${goal.title}: ${goal.currentAmount}/${goal.targetAmount}`)
+          .map((goal) => `${goal.title}: Rs.${(goal.currentAmount || 0).toLocaleString()} of Rs.${(goal.targetAmount || 0).toLocaleString()}`)
           .join("; ")
-      : "No active goals";
+      : "No active goals yet";
 
   const transactionSummary =
     transactions.length > 0
       ? transactions
           .slice(-5)
-          .map((tx) => `${tx.type} ${tx.status} ${tx.amount}`)
+          .map((tx) => `${tx.type}: Rs.${(tx.amount || 0).toLocaleString()} (${tx.status})`)
           .join("; ")
       : "No recent transactions";
 
+  const savingsRate = financial.income > 0 ? ((financial.savings / financial.income) * 100).toFixed(1) : 0;
+  const healthScore = insightPayload.summary?.financialHealthScore ?? 0;
+  const healthStatus = healthScore >= 75 ? 'Excellent' : healthScore >= 50 ? 'Good' : 'Needs Improvement';
+
   return [
-    `Income: ${financial.income || 0}`,
-    `Expenses: ${financial.expenses || 0}`,
-    `Savings: ${financial.savings || 0}`,
-    `Investments: ${financial.investments || 0}`,
-    `Goals: ${goalsSummary}`,
-    `Recent transactions: ${transactionSummary}`,
-    `AI insights: ${(insightPayload.insights || []).join(" | ") || "None"}`,
-    `Recommendations: ${(insightPayload.recommendations || []).join(" | ") || "None"}`,
-    `Health score: ${insightPayload.summary?.financialHealthScore ?? "unknown"}`,
+    "## User Financial Profile",
+    `Monthly Income: Rs.${(financial.income || 0).toLocaleString()}`,
+    `Monthly Expenses: Rs.${(financial.expenses || 0).toLocaleString()}`,
+    `Current Savings: Rs.${(financial.savings || 0).toLocaleString()} (${savingsRate}% savings rate)`,
+    `Investments: Rs.${(financial.investments || 0).toLocaleString()}`,
+    `Financial Health: ${healthStatus} (Score: ${healthScore}/100)`,
+    `\nActive Goals: ${goalsSummary}`,
+    `Recent Transactions: ${transactionSummary}`,
+    `\nKey Insights: ${(insightPayload.insights || []).slice(0, 2).join(" | ") || "None yet"}`,
+    `Recommendations: ${(insightPayload.recommendations || []).slice(0, 2).join(" | ") || "Keep monitoring"}`,
+    "\n## Instructions",
+    "Be conversational, friendly, and warm. Reference their data when relevant to personalize answers.",
+    "For personal questions: use their profile data. For general questions: explain concepts with examples.",
+    "Always encourage positive financial habits and celebrate their progress!",
   ].join("\n");
 }
 
 const ALLOWED_SCOPE_TERMS = [
-  "my",
-  "me",
-  "mine",
-  "account",
-  "balance",
-  "income",
-  "salary",
-  "expense",
-  "expenses",
-  "budget",
-  "budgeting",
-  "saving",
-  "savings",
-  "goal",
-  "goals",
-  "portfolio",
-  "asset",
-  "allocation",
-  "diversification",
-  "invest",
-  "investment",
-  "sip",
-  "mutual fund",
-  "stock",
-  "stocks",
-  "stock market",
-  "etf",
-  "bond",
-  "bonds",
-  "equity",
-  "equities",
-  "index fund",
-  "index funds",
-  "crypto",
-  "bitcoin",
-  "ethereum",
-  "gold",
-  "silver",
-  "forex",
-  "currency",
-  "currencies",
-  "tax",
-  "taxes",
-  "insurance",
-  "interest rate",
-  "interest rates",
-  "inflation",
-  "deflation",
-  "recession",
-  "economy",
-  "economic",
-  "market",
-  "markets",
-  "gdp",
-  "central bank",
-  "federal reserve",
-  "rbi",
-  "returns",
-  "compound",
-  "compounding",
-  "risk",
-  "financial planning",
-  "retirement",
-  "emergency fund",
-  "debt",
-  "loan",
-  "transaction",
-  "transactions",
-  "security",
-  "fraud",
-  "pin",
-  "otp",
-  "duress",
-  "settings",
-  "dashboard",
-  "insight",
-  "insights",
-  "action",
-  "actions",
-  "contact",
-  "contacts",
-  "navigate",
-  "where",
-  "which page",
-  "page",
-  "screen",
-  "open",
-  "take me",
-  "plan",
-  "plans",
-  "bank",
-  "banks",
+  "my", "me", "mine", "account", "balance", "income", "salary", "expense", "expenses",
+  "budget", "budgeting", "saving", "savings", "goal", "goals", "portfolio", "asset",
+  "allocation", "diversification", "invest", "investment", "sip", "mutual fund", "stock",
+  "stocks", "stock market", "etf", "bond", "bonds", "equity", "equities", "index fund",
+  "index funds", "crypto", "bitcoin", "ethereum", "gold", "silver", "forex", "currency",
+  "currencies", "tax", "taxes", "insurance", "interest rate", "interest rates", "inflation",
+  "deflation", "recession", "economy", "economic", "market", "markets", "gdp", "central bank",
+  "federal reserve", "rbi", "returns", "compound", "compounding", "risk", "financial planning",
+  "retirement", "emergency fund", "debt", "loan", "transaction", "transactions", "security",
+  "fraud", "pin", "otp", "duress", "settings", "dashboard", "insight", "insights", "action",
+  "actions", "contact", "contacts", "navigate", "where", "which page", "page", "screen", "open",
+  "take me", "plan", "plans", "bank", "banks",
+  // General finance education terms
+  "what", "how", "why", "explain", "define", "compare", "difference", "between", "best",
+  "is", "should", "advice", "strategy", "tips", "learn", "understand",
 ];
 
 const BLOCKED_NON_FINANCE_TERMS = [
@@ -398,11 +331,16 @@ function isInFinanceScope(text) {
   const hasAllowedSignal = ALLOWED_SCOPE_TERMS.some((term) => lower.includes(term));
   const hasBlockedSignal = BLOCKED_NON_FINANCE_TERMS.some((term) => lower.includes(term));
 
+  // Block explicitly non-finance topics
   if (hasBlockedSignal && !hasAllowedSignal) {
     return false;
   }
 
-  return hasAllowedSignal;
+  // Accept any question with finance-related terms or education keywords
+  if (hasAllowedSignal) return true;
+  
+  // Default: assume finance scope unless explicitly blocked
+  return !hasBlockedSignal;
 }
 
 function buildScopeRefusal(text) {
@@ -414,7 +352,7 @@ function buildScopeRefusal(text) {
     model: "local",
     intent: "OUT_OF_SCOPE",
     reply:
-      "I can help with personal finance, investing, risk, banking, and how to use L.E.G.E.N.D., but not unrelated topics like politics, sports, entertainment, or general news.",
+      "I'm here to help with personal finance, investing, budgeting, goals, taxes, and how to use LEGEND. I can answer both personal questions about your account and general finance education questions. However, I can't help with unrelated topics like politics, sports, or entertainment. What financial question can I help with?",
     actions: [
       {
         type: "NAVIGATE",
