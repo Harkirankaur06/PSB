@@ -11,8 +11,10 @@ import {
   DollarSign,
   FileText,
   ArrowRight,
+  ScanSearch,
 } from 'lucide-react';
 import { useAppOverview, useFormattedCurrency } from '@/lib/app-data';
+import Link from 'next/link';
 
 const statusConfig = {
   pending: { icon: AlertCircle, color: 'text-warning', bg: 'bg-warning/10' },
@@ -65,6 +67,24 @@ export default function ActionCenterPage() {
             AI recommendations and cyber prompts prioritized from your live account data
           </p>
         </div>
+
+        <Card className="border-primary/20 bg-primary/5 p-5">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-foreground">SecureWealth Twin workflow</p>
+              <p className="text-sm text-muted-foreground">
+                Open the explicit hackathon flow that connects recommendation, fraud signals,
+                risk scoring, and final action control.
+              </p>
+            </div>
+            <Button asChild className="gap-2">
+              <Link href="/twin">
+                Open Twin
+                <ScanSearch className="h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
+        </Card>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card className="p-4">

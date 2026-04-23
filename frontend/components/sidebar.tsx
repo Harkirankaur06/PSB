@@ -11,7 +11,8 @@ import {
   Users, 
   MoreHorizontal,
   Briefcase,
-  TrendingUp
+  TrendingUp,
+  ScanSearch
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -24,6 +25,7 @@ const menuItems = [
   { icon: TrendingUp, label: 'Invest', href: '/invest' },
   { icon: Target, label: 'Goals & Planning', href: '/goals' },
   { icon: Brain, label: 'AI Insights', href: '/insights' },
+  { icon: ScanSearch, label: 'SecureWealth Twin', href: '/twin' },
   { icon: Zap, label: 'Future Simulator', href: '/simulator' },
   { icon: AlertCircle, label: 'Action Center', href: '/actions' },
   { icon: Shield, label: 'Protection', href: '/protection' },
