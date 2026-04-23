@@ -79,7 +79,7 @@ export default function ActionCenterPage() {
             <div>
               <p className="text-sm font-semibold text-foreground">SecureWealth Twin workflow</p>
               <p className="text-sm text-muted-foreground">
-                Open the explicit hackathon flow that connects recommendation, fraud signals,
+                Open the explicit flow that connects recommendation, fraud signals,
                 risk scoring, and final action control.
               </p>
             </div>

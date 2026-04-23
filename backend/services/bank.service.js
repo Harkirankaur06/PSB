@@ -1,10 +1,14 @@
 const bcrypt = require("bcrypt");
+const { Types } = require("mongoose");
 const User = require("../models/User");
 const Transaction = require("../models/Transaction");
 const FinancialData = require("../models/FinancialData");
 const BankProfile = require("../models/BankProfile");
 const auditService = require("./audit.service");
 const emailService = require("./email.service");
+const aiService = require("./ai.service");
+const financialService = require("./financial.service");
+const { calculateRisk } = require("../modules/cyber/cyber.service");
 const {
   createSeededRandom,
   generateBankIdentity,
@@ -188,6 +192,220 @@ function computeTransferSignals({ amount, financial, seenBeneficiary, session, c
   return {
     riskScore: Math.min(99, riskScore),
     signals,
+  };
+}
+
+function buildExternalTransferWeights({
+  amount,
+  averageTransferAmount,
+  seenBeneficiary,
+  currentDeviceTrusted,
+  behaviorAnomalyScore = 0,
+}) {
+  const now = new Date();
+  const isLateNight = now.getHours() < 6 || now.getHours() >= 23;
+  const weights = [];
+
+  if (!seenBeneficiary) {
+    weights.push({
+      label: "New recipient",
+      points: 25,
+      reason: "This beneficiary has not appeared in your prior transfer history.",
+    });
+  }
+
+  if (amount >= Math.max(20000, averageTransferAmount * 3)) {
+    weights.push({
+      label: "High amount anomaly",
+      points: 20,
+      reason: "This amount is much higher than your usual transfer pattern.",
+    });
+  }
+
+  if (isLateNight) {
+    weights.push({
+      label: "Late-night timing",
+      points: 15,
+      reason: "Transfers at this hour are less common and deserve extra review.",
+    });
+  }
+
+  if (!currentDeviceTrusted) {
+    weights.push({
+      label: "Untrusted device",
+      points: 15,
+      reason: "This device is not marked as trusted for the account.",
+    });
+  }
+
+  if (behaviorAnomalyScore >= 30) {
+    weights.push({
+      label: "Behavior anomaly",
+      points: behaviorAnomalyScore >= 60 ? 18 : 10,
+      reason: "Recent interaction patterns suggest elevated stress or unusual behavior.",
+    });
+  }
+
+  const total = weights.reduce((sum, item) => sum + item.points, 0);
+  const decision = total >= 60 ? "block" : total >= 35 ? "warn" : "allow";
+
+  return {
+    total,
+    decision,
+    isLateNight,
+    weights,
+  };
+}
+
+async function previewTransfer({
+  user,
+  session = null,
+  deviceId = null,
+  data,
+}) {
+  const { profile, financial } = await bootstrapBanking(user._id);
+
+  if (profile.status === "frozen") {
+    throw new Error("Account is frozen. Unfreeze it before creating a transfer.");
+  }
+
+  const amount = Number(data.amount || 0);
+  if (!amount || amount <= 0) {
+    throw new Error("Transfer amount must be greater than zero.");
+  }
+
+  if (amount > (financial.savings || 0)) {
+    throw new Error("Insufficient available balance.");
+  }
+
+  const beneficiaryName = String(data.beneficiaryName || "").trim();
+  const beneficiaryAccount = String(data.beneficiaryAccount || "").replace(/\D/g, "");
+  const ifsc = String(data.ifsc || "").trim().toUpperCase();
+  const bankName = String(data.bankName || "").trim();
+
+  if (!beneficiaryName) {
+    throw new Error("Account holder name is required.");
+  }
+
+  if (!beneficiaryAccount || beneficiaryAccount.length < 8) {
+    throw new Error("Enter a valid beneficiary account number.");
+  }
+
+  if (!ifsc) {
+    throw new Error("IFSC is required.");
+  }
+
+  if (!bankName) {
+    throw new Error("Bank name is required.");
+  }
+
+  const previousTransfer = await Transaction.findOne({
+    userId: user._id,
+    type: "transfer",
+    "metadata.beneficiaryAccount": beneficiaryAccount,
+  });
+
+  const previousTransfers = await Transaction.find({
+    userId: user._id,
+    type: "transfer",
+    status: { $in: ["completed", "warning"] },
+  })
+    .sort({ createdAt: -1 })
+    .limit(20);
+
+  const averageTransferAmount =
+    previousTransfers.length > 0
+      ? previousTransfers.reduce((sum, item) => sum + (item.amount || 0), 0) / previousTransfers.length
+      : 0;
+
+  const currentDeviceTrusted = Boolean(
+    (user.devices || []).find((item) => item.deviceId === deviceId)?.isTrusted
+  );
+
+  const weightSummary = buildExternalTransferWeights({
+    amount,
+    averageTransferAmount,
+    seenBeneficiary: Boolean(previousTransfer),
+    currentDeviceTrusted,
+    behaviorAnomalyScore: Number(data.behaviorAnomalyScore || 0),
+  });
+
+  const syntheticTransaction = {
+    _id: new Types.ObjectId(),
+    amount,
+    type: "transfer",
+  };
+
+  const riskResult = await calculateRisk({
+    user,
+    transaction: syntheticTransaction,
+    deviceId,
+    metadata: {
+      beneficiaryId: beneficiaryAccount,
+      savedBeneficiaries: previousTransfers
+        .map((item) => item.metadata?.beneficiaryAccount)
+        .filter(Boolean),
+      location: bankName,
+      lastLocation: previousTransfers[0]?.metadata?.location || "Known location",
+      otpRetries: Number(data.otpRetries || 0),
+    },
+    accountBalance: financial.savings || 0,
+  });
+
+  const aiInsights = await aiService.generateInsights(user._id);
+  const financialResult = await financialService.getFinancialWithGoals(user._id);
+  const monthlySurplus = Math.max(
+    0,
+    (financialResult.financial?.income || 0) - (financialResult.financial?.expenses || 0)
+  );
+  const savingsImpactPercent =
+    (financial.savings || 0) > 0 ? Math.round((amount / financial.savings) * 100) : 0;
+
+  return {
+    beneficiary: {
+      beneficiaryName,
+      beneficiaryAccountMasked: maskAccountNumber(beneficiaryAccount),
+      ifsc,
+      bankName,
+      transferMode: data.channel || "NEFT",
+      purpose: data.category || "Personal",
+      note: data.note || "",
+      isNewBeneficiary: !previousTransfer,
+    },
+    wealthIntelligence: {
+      currentBalance: financial.savings || 0,
+      projectedBalance: Math.max(0, (financial.savings || 0) - amount),
+      monthlySurplus,
+      savingsImpactPercent,
+      goalImpact:
+        amount > monthlySurplus
+          ? "This transfer is larger than your current monthly surplus and may slow some goals."
+          : "This transfer stays within your current monthly surplus comfort zone.",
+      aiRecommendation:
+        aiInsights.recommendations?.[0] ||
+        aiInsights.insights?.[0] ||
+        "Review the purpose and timing before confirming the transfer.",
+    },
+    cyberProtection: {
+      riskScore: Math.max(riskResult.riskScore, weightSummary.total),
+      decision:
+        weightSummary.decision === "block" || riskResult.decision === "block"
+          ? "block"
+          : weightSummary.decision === "warn" || riskResult.decision === "warn"
+            ? "warn"
+            : "allow",
+      reasons: riskResult.reasons,
+      explainability: weightSummary.weights,
+      signals: riskResult.signals,
+      calmMessage:
+        weightSummary.decision === "block" || riskResult.decision === "block"
+          ? "This action looks unusual for your account, so we paused it to protect your funds."
+          : weightSummary.decision === "warn" || riskResult.decision === "warn"
+            ? "This action is unusual for your account. Please confirm again after a short review."
+            : "This action fits your normal profile and can proceed with verification.",
+      coolingOffSeconds:
+        weightSummary.decision === "warn" || riskResult.decision === "warn" ? 30 : 0,
+    },
   };
 }
 
@@ -409,6 +627,7 @@ module.exports = {
   getAccount,
   getTransactions,
   getRiskScore,
+  previewTransfer,
   initiateTransfer,
   verifyTransferOtp,
   setAccountFreeze,

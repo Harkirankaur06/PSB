@@ -25,6 +25,28 @@ const userBankConnectionSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    accountSnapshot: {
+      monthlyIncome: {
+        type: Number,
+        default: 0,
+      },
+      monthlyExpenses: {
+        type: Number,
+        default: 0,
+      },
+      savingsBalance: {
+        type: Number,
+        default: 0,
+      },
+      investmentValue: {
+        type: Number,
+        default: 0,
+      },
+      assetValue: {
+        type: Number,
+        default: 0,
+      },
+    },
   },
   { timestamps: true }
 );

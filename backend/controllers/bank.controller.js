@@ -34,6 +34,20 @@ async function createTransfer(req, res) {
   }
 }
 
+async function previewTransfer(req, res) {
+  try {
+    const result = await bankService.previewTransfer({
+      user: req.user,
+      session: req.session,
+      deviceId: req.headers["x-device-id"],
+      data: req.body,
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
 async function verifyOtp(req, res) {
   try {
     const result = await bankService.verifyTransferOtp({
@@ -74,6 +88,7 @@ async function setFreeze(req, res) {
 module.exports = {
   getAccount,
   getTransactions,
+  previewTransfer,
   createTransfer,
   verifyOtp,
   getRiskScore,

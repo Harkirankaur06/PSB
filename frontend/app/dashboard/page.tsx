@@ -76,7 +76,7 @@ export default function DashboardPage() {
           <DashboardCard
             title="Savings Rate"
             value={`${data.metrics.savingsRate}%`}
-            description="Live from your database"
+            description="Live from your financial profile"
           />
           <DashboardCard
             title="Active Goals"

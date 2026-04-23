@@ -170,7 +170,7 @@ export default function GoalsPage() {
           <div>
             <h1 className="text-3xl font-bold text-foreground mb-2">Goals & Planning</h1>
             <p className="text-muted-foreground">
-              Goal progress from your database with AI completion guidance
+              Goal progress with AI completion guidance
             </p>
           </div>
 

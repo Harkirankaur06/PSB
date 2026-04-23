@@ -15,6 +15,7 @@ router.use(protect, bankLimiter);
 
 router.get("/account", controller.getAccount);
 router.get("/transactions", controller.getTransactions);
+router.post("/transfer/preview", transferLimiter, controller.previewTransfer);
 router.post("/transfer", transferLimiter, controller.createTransfer);
 router.post("/verify-otp", transferLimiter, controller.verifyOtp);
 router.get("/risk-score", controller.getRiskScore);
