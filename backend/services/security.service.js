@@ -13,6 +13,10 @@ const {
 const DEFAULT_APP_ORIGIN = "http://localhost:3000";
 const RP_NAME = "L.E.G.E.N.D.";
 
+function toWebAuthnUserId(value) {
+  return Uint8Array.from(Buffer.from(String(value), "utf8"));
+}
+
 function getOriginConfig(originHeader) {
   const origin = originHeader || process.env.FRONTEND_ORIGIN || DEFAULT_APP_ORIGIN;
   const url = new URL(origin);
@@ -465,7 +469,7 @@ async function generateBiometricRegistrationOptions(userId, session, originHeade
     rpID,
     userName: user.email,
     userDisplayName: user.name,
-    userID: user._id.toString(),
+    userID: toWebAuthnUserId(user._id),
     attestationType: "none",
     authenticatorSelection: {
       authenticatorAttachment: "platform",
