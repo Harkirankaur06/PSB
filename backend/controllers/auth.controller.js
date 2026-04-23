@@ -1,5 +1,6 @@
 const authService = require("../services/auth.service");
 const auditService = require("../services/audit.service");
+const emailService = require("../services/email.service");
 
 async function signup(req, res) {
   try {
@@ -24,6 +25,12 @@ async function login(req, res) {
       req.headers["user-agent"],
       req.headers["x-device-id"] || null
     );
+    if (result.isNewDevice) {
+      await emailService.sendNewDeviceNotification({
+        email: result.user.email,
+        deviceName: result.deviceName,
+      });
+    }
      await auditService.logAction({
      userId: result.user._id,
      action: "LOGIN",
@@ -34,7 +41,8 @@ async function login(req, res) {
       message: "Login successful",
       accessToken: result.accessToken,
       refreshToken: result.refreshToken,
-      deviceId: result.deviceId
+      deviceId: result.deviceId,
+      isNewDevice: result.isNewDevice,
     });
    
 

@@ -53,6 +53,33 @@ async function trustDevice(req, res) {
   }
 }
 
+async function sendOtp(req, res) {
+  try {
+    const result = await securityService.sendDeviceOtp(
+      req.user._id,
+      req.session,
+      req.ip
+    );
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
+async function verifyOtp(req, res) {
+  try {
+    const result = await securityService.verifyDeviceOtp(
+      req.user._id,
+      req.session,
+      req.body.otp,
+      req.ip
+    );
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
 async function getRegistrationOptions(req, res) {
   try {
     const options = await securityService.generateBiometricRegistrationOptions(
@@ -117,6 +144,8 @@ module.exports = {
   enableBiometric,
   getStatus,
   trustDevice,
+  sendOtp,
+  verifyOtp,
   getRegistrationOptions,
   verifyRegistration,
   getAuthenticationOptions,

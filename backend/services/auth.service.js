@@ -65,11 +65,12 @@ async function login(data, deviceName, knownDeviceId = null) {
   const matchedDevice = knownDeviceId
     ? user.devices.find((device) => device.deviceId === knownDeviceId)
     : null;
+  const normalizedDeviceName = getDeviceName(deviceName);
 
   const deviceId = matchedDevice ? matchedDevice.deviceId : uuidv4();
 
   if (matchedDevice) {
-    matchedDevice.deviceName = getDeviceName(deviceName);
+    matchedDevice.deviceName = normalizedDeviceName;
     matchedDevice.lastUsed = new Date();
 
     if (matchedDevice.isTrusted) {
@@ -78,7 +79,7 @@ async function login(data, deviceName, knownDeviceId = null) {
   } else {
     user.devices.push({
       deviceId,
-      deviceName: getDeviceName(deviceName),
+      deviceName: normalizedDeviceName,
       isTrusted: false,
       lastUsed: new Date(),
     });
@@ -100,7 +101,14 @@ async function login(data, deviceName, knownDeviceId = null) {
 
   startSession(String(user._id));
 
-  return { user, accessToken, refreshToken, deviceId };
+  return {
+    user,
+    accessToken,
+    refreshToken,
+    deviceId,
+    isNewDevice: !matchedDevice,
+    deviceName: normalizedDeviceName,
+  };
 }
 async function logout(userId, refreshToken) {
   await Session.deleteOne({ userId, refreshToken });

@@ -5,6 +5,14 @@ import { startAuthentication } from '@simplewebauthn/browser';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Fingerprint, Lock, ShieldCheck } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
@@ -46,6 +54,9 @@ export default function VerifyPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [trustingDevice, setTrustingDevice] = useState(false);
+  const [otpOpen, setOtpOpen] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [otpStatus, setOtpStatus] = useState('');
 
   useEffect(() => {
     const fetchStatus = async () => {
@@ -68,8 +79,10 @@ export default function VerifyPage() {
         }
 
         if (data.secondFactorVerified) {
-          router.replace('/dashboard');
-          return;
+          if (!data.promptTrustDevice) {
+            router.replace('/dashboard');
+            return;
+          }
         }
 
         if (data.needsSetup) {
@@ -78,6 +91,7 @@ export default function VerifyPage() {
         }
 
         setStatus(data);
+        setOtpOpen(Boolean(data.promptTrustDevice));
       } catch (err) {
         console.error('Security status fetch failed', err);
         setError(
@@ -180,12 +194,13 @@ export default function VerifyPage() {
     }
   };
 
-  const handleTrustDevice = async () => {
+  const handleSendOtp = async () => {
     setTrustingDevice(true);
     setError('');
+    setOtpStatus('');
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/security/trust-device`, {
+      const res = await fetch(`${API_BASE_URL}/api/security/otp/send`, {
         method: 'POST',
         headers: getAuthHeaders(),
       });
@@ -193,7 +208,39 @@ export default function VerifyPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || 'Unable to trust this device');
+        throw new Error(data.error || 'Unable to send OTP');
+      }
+
+      setOtpStatus(
+        data.deliveryMode === 'smtp'
+          ? 'OTP sent to your email.'
+          : 'OTP generated. Email service is in fallback mode; check backend logs.'
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to send OTP.');
+    } finally {
+      setTrustingDevice(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    setTrustingDevice(true);
+    setError('');
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/security/otp/verify`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({ otp }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Unable to verify OTP');
       }
 
       setStatus((current) =>
@@ -207,8 +254,11 @@ export default function VerifyPage() {
             }
           : current
       );
+      setOtpOpen(false);
+      setOtp('');
+      setOtpStatus('Device trusted successfully.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to trust this device.');
+      setError(err instanceof Error ? err.message : 'Unable to verify OTP.');
     } finally {
       setTrustingDevice(false);
     }
@@ -229,6 +279,48 @@ export default function VerifyPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-md">
+        <Dialog open={otpOpen} onOpenChange={setOtpOpen}>
+          <DialogContent showCloseButton={false}>
+            <DialogHeader>
+              <DialogTitle>Verify New Device</DialogTitle>
+              <DialogDescription>
+                We detected a new device login. Send an OTP to your email and verify it before
+                trusting this device.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <Button onClick={handleSendOtp} disabled={trustingDevice} className="w-full">
+                {trustingDevice ? 'Sending OTP...' : 'Send OTP to Email'}
+              </Button>
+
+              <Input
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="Enter 6-digit OTP"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+              />
+
+              {otpStatus && <p className="text-sm text-muted-foreground">{otpStatus}</p>}
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setOtpOpen(false)}
+                disabled={trustingDevice}
+              >
+                Later
+              </Button>
+              <Button onClick={handleVerifyOtp} disabled={trustingDevice || otp.length !== 6}>
+                {trustingDevice ? 'Verifying...' : 'Verify OTP'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <Card className="p-8">
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-primary/20 rounded-full mb-4">
@@ -251,22 +343,22 @@ export default function VerifyPage() {
           )}
 
           <div className="space-y-4">
-            {status?.promptTrustDevice && (
+            {status?.promptTrustDevice && !otpOpen && (
               <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-3">
                 <div>
                   <p className="font-medium text-foreground">Trust this device?</p>
                   <p className="text-sm text-muted-foreground">
                     {status.currentDevice?.deviceName || 'This device'} is new to your account.
-                    Trusting it helps strengthen future login integrity and reduces friction.
+                    Verify it by email OTP before marking it as trusted.
                   </p>
                 </div>
                 <div className="flex gap-2">
                   <Button
-                    onClick={handleTrustDevice}
+                    onClick={() => setOtpOpen(true)}
                     disabled={trustingDevice}
                     className="flex-1"
                   >
-                    {trustingDevice ? 'Trusting device...' : 'Trust This Device'}
+                    Open OTP Popup
                   </Button>
                   <Button
                     type="button"

@@ -1,5 +1,8 @@
 const bcrypt = require("bcrypt");
 const User = require("../models/User");
+const OtpToken = require("../models/OtpToken");
+const emailService = require("./email.service");
+const auditService = require("./audit.service");
 const {
   generateRegistrationOptions,
   verifyRegistrationResponse,
@@ -119,6 +122,122 @@ async function trustCurrentDevice(userId, session = null) {
     trusted: true,
     deviceId: device.deviceId,
     trustScore: user.trustScore,
+  };
+}
+
+function generateOtpCode() {
+  return `${Math.floor(100000 + Math.random() * 900000)}`;
+}
+
+async function sendDeviceOtp(userId, session = null, ipAddress = null) {
+  const user = await getUser(userId);
+
+  if (!session?.deviceId) {
+    throw new Error("Current session device not found");
+  }
+
+  const device = (user.devices || []).find((item) => item.deviceId === session.deviceId);
+
+  if (!device) {
+    throw new Error("Device not found on this account");
+  }
+
+  const otp = generateOtpCode();
+  const otpHash = await bcrypt.hash(otp, 10);
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+  await OtpToken.findOneAndUpdate(
+    {
+      userId,
+      deviceId: session.deviceId,
+      purpose: "new_device_login",
+    },
+    {
+      userId,
+      deviceId: session.deviceId,
+      purpose: "new_device_login",
+      otpHash,
+      expiresAt,
+      consumedAt: null,
+      attempts: 0,
+    },
+    { upsert: true, new: true }
+  );
+
+  const emailResult = await emailService.sendOtpEmail({
+    email: user.email,
+    otp,
+    deviceName: device.deviceName,
+  });
+
+  await auditService.logAction({
+    userId,
+    action: "OTP_SENT",
+    ipAddress,
+    deviceId: session.deviceId,
+    metadata: {
+      purpose: "new_device_login",
+      deliveryMode: emailResult.mode,
+    },
+  });
+
+  return {
+    sent: true,
+    expiresAt,
+    deliveryMode: emailResult.mode,
+  };
+}
+
+async function verifyDeviceOtp(userId, session = null, otp, ipAddress = null) {
+  if (!session?.deviceId) {
+    throw new Error("Current session device not found");
+  }
+
+  const record = await OtpToken.findOne({
+    userId,
+    deviceId: session.deviceId,
+    purpose: "new_device_login",
+  });
+
+  if (!record) {
+    throw new Error("No active OTP found");
+  }
+
+  if (record.consumedAt) {
+    throw new Error("OTP has already been used");
+  }
+
+  if (record.expiresAt.getTime() < Date.now()) {
+    throw new Error("OTP has expired");
+  }
+
+  record.attempts += 1;
+  const valid = await bcrypt.compare(otp, record.otpHash);
+
+  if (!valid) {
+    await record.save();
+    throw new Error("Invalid OTP");
+  }
+
+  record.consumedAt = new Date();
+  await record.save();
+
+  const trustResult = await trustCurrentDevice(userId, session);
+
+  await auditService.logAction({
+    userId,
+    action: "OTP_VERIFIED",
+    ipAddress,
+    deviceId: session.deviceId,
+    metadata: {
+      purpose: "new_device_login",
+    },
+  });
+
+  return {
+    verified: true,
+    trusted: true,
+    trustScore: trustResult.trustScore,
   };
 }
 
@@ -346,6 +465,8 @@ module.exports = {
   enableBiometric,
   getSecurityStatus,
   trustCurrentDevice,
+  sendDeviceOtp,
+  verifyDeviceOtp,
   generateBiometricRegistrationOptions,
   verifyBiometricRegistration,
   generateBiometricAuthenticationOptions,
