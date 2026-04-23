@@ -433,8 +433,8 @@ async function chatWithOpenAI(messages, contextBlock, intent, currentPage) {
     throw new Error("OPENAI_API_KEY is not configured");
   }
 
-  const model = process.env.OPENAI_CHAT_MODEL || "gpt-5-mini";
-  const response = await fetch("https://api.openai.com/v1/responses", {
+  const model = process.env.OPENAI_CHAT_MODEL || "gpt-4-turbo";
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -442,41 +442,32 @@ async function chatWithOpenAI(messages, contextBlock, intent, currentPage) {
     },
     body: JSON.stringify({
       model,
-      input: [
+      messages: [
         {
-          role: "developer",
-          content: [
-            {
-              type: "input_text",
-              text: buildFinancialAssistantPrompt(contextBlock, intent, currentPage),
-            },
-          ],
+          role: "system",
+          content: buildFinancialAssistantPrompt(contextBlock, intent, currentPage),
         },
-        ...messages.map((message) => ({
-          role: message.role,
-          content: [{ type: "input_text", text: message.content }],
+        ...messages.map((msg) => ({
+          role: msg.role === "assistant" ? "assistant" : "user",
+          content: msg.content,
         })),
       ],
-      text: {
-        format: {
-          type: "text",
-        },
-      },
+      temperature: 0.7,
+      max_tokens: 2000,
     }),
   });
 
   const data = await response.json();
 
   if (!response.ok) {
+    console.error("OpenAI Error:", data);
     throw new Error(data.error?.message || "OpenAI chat request failed");
   }
 
-  const text =
-    data.output_text ||
-    data.output?.flatMap((item) => item.content || [])?.find((item) => item.type === "output_text")
-      ?.text;
+  const text = data.choices?.[0]?.message?.content;
 
   if (!text) {
+    console.error("No text in OpenAI response:", data);
     throw new Error("OpenAI did not return any chat text");
   }
 
@@ -566,6 +557,22 @@ function buildLocalFinancialReply({ financial, goals, insightPayload, latestUser
       return "A practical money foundation is: cover essentials, keep debt manageable, build an emergency fund, and automate savings before increasing investment risk. I can help you turn that into a step-by-step plan too.";
     }
 
+    if (lower.includes("retirement") || lower.includes("pension")) {
+      return "Retirement planning typically involves: estimating your retirement expenses, calculating the corpus needed, and investing in a mix of instruments (NPS, EPF, mutual funds, stocks) based on your time horizon and risk tolerance. Connect your financial data for personalized retirement planning.";
+    }
+
+    if (lower.includes("tax")) {
+      return "Tax-efficient investing involves: utilizing long-term capital gains rates, tax-advantaged accounts (NPS, EPF), harvesting losses, and planning your income. Different investment types (equity, debt, gold) have different tax implications. Ask for specifics!";
+    }
+
+    if (lower.includes("crypto") || lower.includes("bitcoin") || lower.includes("ethereum")) {
+      return "Cryptocurrencies are digital assets with high volatility. Bitcoin is a store of value, Ethereum has smart contracts. Risks include regulatory uncertainty, market volatility, and security. Most advisors suggest keeping crypto to <5% of portfolio. Understand before investing!";
+    }
+
+    if (lower.includes("real estate") || lower.includes("property") || lower.includes("mortgage")) {
+      return "Real estate can be a long-term wealth builder through appreciati on and rental income. Consider: location, demand, leverage (mortgage), maintenance costs, and rental yields. REITs offer real estate exposure without direct ownership.";
+    }
+
     return "I can answer general finance and investment questions even without your account data. For account-specific advice, connect your finances so I can tailor the answer to your numbers.";
   }
 
@@ -582,27 +589,56 @@ function buildLocalFinancialReply({ financial, goals, insightPayload, latestUser
       recommendations[0] ||
       "Stay diversified and avoid concentrating too much into one move at once.";
 
-    return `Your current investment base is ${financial.investments || 0}, which is about ${ratio.toFixed(
+    return `Your current investment base is Rs.${(financial.investments || 0).toLocaleString()}, which is about ${ratio.toFixed(
       1
     )}% of monthly income. In general, a sensible progression is: build an emergency fund first, invest consistently through diversified instruments, and increase risk only when your cash flow is stable. Based on your profile, the next sensible move is: ${topRecommendation}`;
   }
 
+  if (lower.includes("retirement") || lower.includes("pension") || lower.includes("nps") || lower.includes("epf")) {
+    const ratio = financial.income > 0 ? (financial.investments / financial.income) * 100 : 0;
+    return `For retirement at your income level (Rs.${(financial.income || 0).toLocaleString()}), start with NPS and EPF contributions. With current investments of Rs.${(financial.investments || 0).toLocaleString()}, aim to increase investments systematically. Retirement corpus needed = 25x annual expenses. Start early for compound growth!`;
+  }
+
   if (lower.includes("saving") || lower.includes("savings")) {
-    return `Your current savings are ${financial.savings || 0}, and your savings rate is ${
+    return `Your current savings are Rs.${(financial.savings || 0).toLocaleString()}, and your savings rate is ${
       insightPayload.summary?.savingsRate ?? 0
-    }%. ${insightPayload.insights?.[0] || "Your saving pattern looks stable right now."}`;
+    }%. ${insightPayload.insights?.[0] || "Your saving pattern looks stable right now."} Ideally, aim for 20%+ savings rate.`;
   }
 
   if (lower.includes("goal")) {
     return goals.length > 0
-      ? `You have ${goals.length} active goals. The slower goals need extra contributions first, so review the Goals page and adjust your monthly plan.`
+      ? `You have ${goals.length} active goals. The closer goals need extra contributions first, so review the Goals page and adjust your monthly plan to stay on track.`
       : "You do not have active goals yet. Creating one would help tailor your investment planning better.";
+  }
+
+  if (lower.includes("emergency fund") || lower.includes("cash reserve")) {
+    const recommendedEmergencyFund = (financial.expenses || 0) * 6;
+    const currentCash = financial.savings || 0;
+    const shortfall = Math.max(0, recommendedEmergencyFund - currentCash);
+    return `Ideally, keep Rs.${recommendedEmergencyFund.toLocaleString()} as emergency fund (6 months of expenses). You currently have Rs.${currentCash.toLocaleString()}. ${
+      shortfall > 0
+        ? `You need Rs.${shortfall.toLocaleString()} more to build a solid safety net.`
+        : "Great! Your emergency fund looks solid."
+    }`;
+  }
+
+  if (lower.includes("budget") || lower.includes("spending")) {
+    const expenseRatio = financial.income > 0 ? ((financial.expenses / financial.income) * 100).toFixed(1) : 0;
+    return `Your expenses are Rs.${(financial.expenses || 0).toLocaleString()} (${expenseRatio}% of income). A healthy budget follows: 50% needs, 30% wants, 20% savings/investment. Review your spending categories and cut non-essentials if needed.`;
+  }
+
+  if (lower.includes("debt") || lower.includes("loan")) {
+    return `Debt management strategy: pay off high-interest debt first (credit cards, personal loans), then lower-interest debt (mortgages, auto loans). Once debt-free, redirect payments to investments. Keep debt-to-income ratio <30%.`;
+  }
+
+  if (lower.includes("tax") || lower.includes("ltcg") || lower.includes("stcg")) {
+    return `Tax optimization: Long-term capital gains (LTCG) on stocks/mutual funds taxed at 20%. Short-term (STCG) at slab rates. Harvest losses to offset gains. Max out NPS (Rs.2.5L) and Section 80C deductions. Use it wisely to keep more of your returns!`;
   }
 
   return (
     insightPayload.portfolioAssistant?.headline ||
     recommendations[0] ||
-    "Your account looks ready for a focused review of savings, spending, and investment posture."
+    "Your account looks ready for a focused review of savings, spending, and investment posture. Ask me any specific finance question!"
   );
 }
 
@@ -661,6 +697,8 @@ async function chatWithAssistant({ userId, provider, messages, currentPage = nul
         ? await chatWithGemini(normalizedMessages, contextBlock, classification.intent, currentPage)
         : await chatWithOpenAI(normalizedMessages, contextBlock, classification.intent, currentPage);
   } catch (error) {
+    console.error("LLM API Error:", error.message, "Provider:", resolvedProvider);
+    console.error("Full error:", error);
     response = {
       provider: "local-fallback",
       model: "heuristic",
