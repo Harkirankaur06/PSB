@@ -57,6 +57,17 @@ const impactColors = {
   low: 'bg-muted text-muted-foreground',
 };
 
+function formatChatMessage(content: string) {
+  return content
+    .replace(/\r\n/g, '\n')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/__(.*?)__/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/^\s*[-*]\s+/gm, '- ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function buildInsights(data: AppOverview): Insight[] {
   const summary = data.ai.summary || {};
   const insights: Insight[] = [];
@@ -288,7 +299,9 @@ export default function InsightsPage() {
                         : 'ml-auto max-w-[90%] bg-primary text-primary-foreground'
                     }`}
                   >
-                    <p>{message.content}</p>
+                    <p className="whitespace-pre-line break-words leading-6">
+                      {formatChatMessage(message.content)}
+                    </p>
                     {message.intent && message.role === 'assistant' && (
                       <p className="mt-2 text-[11px] uppercase tracking-wide text-muted-foreground">
                         {message.intent.replace('_', ' ')}

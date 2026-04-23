@@ -239,6 +239,24 @@ async function generateInsights(userId) {
   };
 }
 
+function cleanAssistantReply(reply) {
+  if (typeof reply !== "string") {
+    return "";
+  }
+
+  return reply
+    .replace(/\r\n/g, "\n")
+    .replace(/^\s{0,3}#{1,6}\s*/gm, "")
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/__(.*?)__/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/^\s*[-*]\s+/gm, "- ")
+    .replace(/^\s*\d+\.\s+/gm, (match) => match.trim())
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function buildChatContext(financial, goals, transactions, insightPayload) {
   if (!financial) {
     return [
@@ -474,7 +492,7 @@ async function chatWithOpenAI(messages, contextBlock, intent, currentPage) {
   return {
     provider: "openai",
     model,
-    reply: text,
+    reply: cleanAssistantReply(text),
   };
 }
 
@@ -528,7 +546,7 @@ async function chatWithGemini(messages, contextBlock, intent, currentPage) {
   return {
     provider: "gemini",
     model,
-    reply: text,
+    reply: cleanAssistantReply(text),
   };
 }
 
