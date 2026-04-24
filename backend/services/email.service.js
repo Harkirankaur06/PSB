@@ -75,8 +75,24 @@ async function sendDuressAlertEmail({ email, deviceName, reason }) {
   });
 }
 
+async function sendImportantActionEmail({ email, action, summary, details = [] }) {
+  const safeDetails = details.filter(Boolean);
+  const detailText = safeDetails.length ? `\nDetails:\n- ${safeDetails.join("\n- ")}` : "";
+  const detailHtml = safeDetails.length
+    ? `<ul>${safeDetails.map((item) => `<li>${item}</li>`).join("")}</ul>`
+    : "";
+
+  return sendEmail({
+    to: email,
+    subject: `Important account activity: ${action}`,
+    text: `${summary}${detailText}`,
+    html: `<p>${summary}</p>${detailHtml}`,
+  });
+}
+
 module.exports = {
   sendOtpEmail,
   sendNewDeviceNotification,
   sendDuressAlertEmail,
+  sendImportantActionEmail,
 };

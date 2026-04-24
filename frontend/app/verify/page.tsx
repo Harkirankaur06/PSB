@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { startAuthentication } from '@simplewebauthn/browser';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -16,11 +16,9 @@ import {
 import {
   Fingerprint,
   Lock,
-  ShieldCheck,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useBehaviorMonitor } from '@/lib/behavior-monitor';
-import { apiRequest } from '@/lib/api-client';
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? 'https://psb-backend.onrender.com';
@@ -66,57 +64,7 @@ export default function VerifyPage() {
   const [otp, setOtp] = useState('');
   const [otpStatus, setOtpStatus] = useState('');
   const [otpPin, setOtpPin] = useState('');
-  const panicHoldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { track, setDuressProtection } = useBehaviorMonitor('verify');
-
-  const activatePrivateSession = async () => {
-    try {
-      await apiRequest('/api/security/private-session', {
-        method: 'POST',
-      });
-      setDuressProtection(true);
-      window.dispatchEvent(new Event('legend-security-refresh'));
-      track('duress_signal', {
-        detail: 'Private session activated on backend',
-      });
-      setStatus((current) =>
-        current
-          ? {
-              ...current,
-              accessMode: 'duress',
-              restrictedMode: true,
-            }
-          : current
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to continue on this device.');
-    }
-  };
-
-  const startHiddenPanicTrigger = () => {
-    if (panicHoldTimer.current) {
-      clearTimeout(panicHoldTimer.current);
-    }
-
-    panicHoldTimer.current = setTimeout(() => {
-      activatePrivateSession();
-    }, 1800);
-  };
-
-  const stopHiddenPanicTrigger = () => {
-    if (panicHoldTimer.current) {
-      clearTimeout(panicHoldTimer.current);
-      panicHoldTimer.current = null;
-    }
-  };
-
-  useEffect(() => {
-    return () => {
-      if (panicHoldTimer.current) {
-        clearTimeout(panicHoldTimer.current);
-      }
-    };
-  }, []);
 
   useEffect(() => {
     const fetchStatus = async () => {
@@ -152,6 +100,7 @@ export default function VerifyPage() {
           return;
         }
 
+        setDuressProtection(data.accessMode === 'duress' || Boolean(data.restrictedMode));
         setStatus(data);
         setOtpOpen(Boolean(data.promptTrustDevice));
       } catch (err) {
@@ -451,23 +400,7 @@ export default function VerifyPage() {
         <Card className="p-8">
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-primary/20 rounded-full mb-4">
-              <button
-                type="button"
-                className="inline-flex items-center justify-center"
-                onPointerDown={startHiddenPanicTrigger}
-                onPointerUp={stopHiddenPanicTrigger}
-                onPointerLeave={stopHiddenPanicTrigger}
-                onPointerCancel={stopHiddenPanicTrigger}
-                onKeyDown={(event) => {
-                  if (event.key === ' ' || event.key === 'Enter') {
-                    startHiddenPanicTrigger();
-                  }
-                }}
-                onKeyUp={stopHiddenPanicTrigger}
-                aria-label="Verification shield"
-              >
-                <ShieldCheck className="w-8 h-8 text-primary" />
-              </button>
+              <Lock className="w-8 h-8 text-primary" />
             </div>
 
             <h1 className="text-3xl font-bold text-foreground mb-2">

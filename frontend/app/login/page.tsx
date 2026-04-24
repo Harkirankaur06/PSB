@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -18,35 +18,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const previousPasswordLength = useRef(0);
-  const panicHoldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const privateSessionRequested = useRef(false);
   const { track } = useBehaviorMonitor('login');
-
-  const startHiddenPanicTrigger = () => {
-    if (panicHoldTimer.current) {
-      clearTimeout(panicHoldTimer.current);
-    }
-
-    panicHoldTimer.current = setTimeout(() => {
-      privateSessionRequested.current = true;
-      track('duress_signal', { detail: 'Hidden panic trigger armed a private session' });
-    }, 1800);
-  };
-
-  const stopHiddenPanicTrigger = () => {
-    if (panicHoldTimer.current) {
-      clearTimeout(panicHoldTimer.current);
-      panicHoldTimer.current = null;
-    }
-  };
-
-  useEffect(() => {
-    return () => {
-      if (panicHoldTimer.current) {
-        clearTimeout(panicHoldTimer.current);
-      }
-    };
-  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,27 +46,8 @@ export default function LoginPage() {
       localStorage.setItem('refreshToken', data.refreshToken);
       localStorage.setItem('deviceId', data.deviceId);
 
-      if (data.accessMode === 'duress' || Boolean(data.restrictedMode)) {
-        setDuressProtection(true);
-        window.dispatchEvent(new Event('legend-security-refresh'));
-      }
-
-      if (privateSessionRequested.current) {
-        try {
-          await apiRequest('/api/security/private-session', {
-            method: 'POST',
-          });
-          setDuressProtection(true);
-          window.dispatchEvent(new Event('legend-security-refresh'));
-          track('duress_signal', {
-            detail: 'Hidden panic trigger activated after login',
-          });
-        } catch (activationError) {
-          console.error('Unable to activate private session', activationError);
-        } finally {
-          privateSessionRequested.current = false;
-        }
-      }
+      setDuressProtection(data.accessMode === 'duress' || Boolean(data.restrictedMode));
+      window.dispatchEvent(new Event('legend-security-refresh'));
 
       router.push('/verify');
     } catch (err: any) {
@@ -201,16 +154,6 @@ export default function LoginPage() {
               type="submit"
               className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
               disabled={loading}
-              onPointerDown={startHiddenPanicTrigger}
-              onPointerUp={stopHiddenPanicTrigger}
-              onPointerLeave={stopHiddenPanicTrigger}
-              onPointerCancel={stopHiddenPanicTrigger}
-              onKeyDown={(event) => {
-                if (event.key === ' ' || event.key === 'Enter') {
-                  startHiddenPanicTrigger();
-                }
-              }}
-              onKeyUp={stopHiddenPanicTrigger}
             >
               {loading ? 'Signing in...' : 'Sign In'}
             </Button>
