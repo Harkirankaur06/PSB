@@ -129,6 +129,7 @@ export default function VerifyPage() {
         }
 
         const res = await fetch(`${API_BASE_URL}/api/security/status`, {
+          cache: 'no-store',
           headers: getAuthHeaders(),
         });
 

@@ -8,7 +8,7 @@ import { AlertCircle, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { apiRequest } from '@/lib/api-client';
-import { useBehaviorMonitor } from '@/lib/behavior-monitor';
+import { setDuressProtection, useBehaviorMonitor } from '@/lib/behavior-monitor';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -59,6 +59,8 @@ export default function LoginPage() {
         accessToken: string;
         refreshToken: string;
         deviceId: string;
+        accessMode?: 'normal' | 'duress';
+        restrictedMode?: boolean;
       }>('/api/auth/login', {
         auth: false,
         method: 'POST',
@@ -72,11 +74,17 @@ export default function LoginPage() {
       localStorage.setItem('refreshToken', data.refreshToken);
       localStorage.setItem('deviceId', data.deviceId);
 
+      if (data.accessMode === 'duress' || Boolean(data.restrictedMode)) {
+        setDuressProtection(true);
+        window.dispatchEvent(new Event('legend-security-refresh'));
+      }
+
       if (privateSessionRequested.current) {
         try {
           await apiRequest('/api/security/private-session', {
             method: 'POST',
           });
+          setDuressProtection(true);
           window.dispatchEvent(new Event('legend-security-refresh'));
           track('duress_signal', {
             detail: 'Hidden panic trigger activated after login',

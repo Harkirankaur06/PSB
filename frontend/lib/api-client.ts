@@ -49,6 +49,7 @@ export async function apiRequest<T>(
 ): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
+    cache: options.cache ?? 'no-store',
     headers: auth ? getAuthHeaders(headers) : getBaseHeaders(headers),
     body,
   });
