@@ -65,6 +65,7 @@ export default function VerifyPage() {
   const [otpOpen, setOtpOpen] = useState(false);
   const [otp, setOtp] = useState('');
   const [otpStatus, setOtpStatus] = useState('');
+  const [otpPin, setOtpPin] = useState('');
   const panicHoldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { track, setDuressProtection } = useBehaviorMonitor('verify');
 
@@ -309,7 +310,7 @@ export default function VerifyPage() {
           'Content-Type': 'application/json',
           ...getAuthHeaders(),
         },
-        body: JSON.stringify({ otp }),
+        body: JSON.stringify({ otp, pin: otpPin || pin }),
       });
 
       const data = await res.json();
@@ -331,6 +332,7 @@ export default function VerifyPage() {
       );
       setOtpOpen(false);
       setOtp('');
+      setOtpPin('');
       setOtpStatus('Device trusted successfully.');
 
 
@@ -391,6 +393,23 @@ export default function VerifyPage() {
               </Button>
 
               <Input
+                type="password"
+                inputMode="numeric"
+                maxLength={4}
+                placeholder="Enter 4-digit PIN"
+                value={otpPin}
+                onChange={(e) => {
+                  const value = e.target.value.replace(/\D/g, '').slice(0, 4);
+                  if (value.length < otpPin.length) {
+                    track('field_correction', { field: 'otpPin' });
+                  } else {
+                    track('field_change', { field: 'otpPin' });
+                  }
+                  setOtpPin(value);
+                }}
+              />
+
+              <Input
                 type="text"
                 inputMode="numeric"
                 maxLength={6}
@@ -418,7 +437,10 @@ export default function VerifyPage() {
               >
                 Later
               </Button>
-              <Button onClick={handleVerifyOtp} disabled={trustingDevice || otp.length !== 6}>
+              <Button
+                onClick={handleVerifyOtp}
+                disabled={trustingDevice || otp.length !== 6 || (status?.hasPin && (otpPin || pin).length !== 4)}
+              >
                 {trustingDevice ? 'Verifying...' : 'Verify OTP'}
               </Button>
             </DialogFooter>

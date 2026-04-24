@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { User, Lock, Bell, Eye, ChevronRight } from 'lucide-react';
 import { useAppOverview, useFormattedCurrency } from '@/lib/app-data';
 import { apiRequest } from '@/lib/api-client';
+import { setDuressProtection } from '@/lib/behavior-monitor';
 import { useSessionSecurity } from '@/lib/session-security';
 
 export default function SettingsPage() {
@@ -126,6 +127,7 @@ export default function SettingsPage() {
       setResolvePassword('');
       setResolvePin('');
       setResolveOtp('');
+      setDuressProtection(false);
       await refreshStatus();
       window.dispatchEvent(new Event('legend-security-refresh'));
       setResolveStatus('Protected mode cleared. Full account functionality has been restored.');

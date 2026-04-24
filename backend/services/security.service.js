@@ -259,19 +259,20 @@ async function verifyDeviceOtp(userId, session = null, otp, ipAddress = null, pi
   }
 
   const user = await getUser(userId);
+  const requiresPinVerification = Boolean(user?.security?.pinHash) && !session.secondFactorVerified;
 
-  if (!user?.security?.pinHash) {
-    throw new Error("PIN setup is required before completing login verification.");
-  }
-
-  if (!pin) {
+  if (requiresPinVerification && !pin) {
     throw new Error("PIN is required to complete login verification.");
   }
 
-  const pinValid = await verifyPin(userId, String(pin));
+  if (requiresPinVerification) {
+    const pinValid = await verifyPin(userId, String(pin));
 
-  if (!pinValid) {
-    throw new Error("Incorrect PIN");
+    if (!pinValid) {
+      throw new Error("Incorrect PIN");
+    }
+  } else if (!session.secondFactorVerified && !user?.security?.pinHash) {
+    throw new Error("PIN setup is required before completing login verification.");
   }
 
   const record = await OtpToken.findOne({
@@ -314,7 +315,7 @@ async function verifyDeviceOtp(userId, session = null, otp, ipAddress = null, pi
     deviceId: session.deviceId,
     metadata: {
       purpose: "new_device_login",
-      authMode: "pin+otp",
+      authMode: requiresPinVerification ? "pin+otp" : "otp",
     },
   });
 
@@ -383,6 +384,7 @@ async function sendDuressResolutionOtp(userId, session = null, ipAddress = null)
     deliveryMode: emailResult.mode,
   };
 }
+
 
 async function sendTransactionOtp(userId, session = null, ipAddress = null) {
   const user = await getUser(userId);
