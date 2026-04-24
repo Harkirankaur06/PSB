@@ -11,6 +11,12 @@ const {
   generateRefreshToken,verifyRefreshToken
 } = require("../utils/token.util");
 
+function shouldAutoVerifySecondFactor(user) {
+  const hasPin = Boolean(user?.security?.pinHash);
+  const hasWebAuthn = (user?.security?.webAuthnCredentials || []).length > 0;
+  return !hasPin && !hasWebAuthn;
+}
+
 function getDeviceName(deviceName) {
   return deviceName || "Unknown Device";
 }
@@ -120,7 +126,7 @@ async function login(data, deviceName, knownDeviceId = null) {
     refreshToken,
     deviceId,
     lastActivityAt: new Date(),
-    secondFactorVerified: false,
+    secondFactorVerified: shouldAutoVerifySecondFactor(user),
     accessMode,
     restrictedMode: isDuressMatch,
     fakeDashboardMode: isDuressMatch,
