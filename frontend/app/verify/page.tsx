@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { startAuthentication } from '@simplewebauthn/browser';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -13,6 +14,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  Fingerprint,
+  Lock,
   ShieldCheck,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -57,6 +60,7 @@ export default function VerifyPage() {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
   const [trustingDevice, setTrustingDevice] = useState(false);
   const [otpOpen, setOtpOpen] = useState(false);
   const [otp, setOtp] = useState('');
@@ -127,30 +131,37 @@ export default function VerifyPage() {
           headers: getAuthHeaders(),
         });
 
-      const data = await res.json();
+        const data = await res.json();
 
-      if (!res.ok) {
-        throw new Error(data.message || data.error || 'Unable to verify session');
-      }
+        if (!res.ok) {
+          throw new Error(data.message || data.error || 'Unable to verify session');
+        }
 
-      if (data.secondFactorVerified) {
+        if (data.secondFactorVerified) {
+          if (!data.promptTrustDevice) {
+            router.replace('/dashboard');
+            return;
+          }
+        }
+
+
         if (data.needsSetup) {
           router.replace('/onboarding');
           return;
         }
 
-        if (!data.promptTrustDevice) {
-          router.replace('/dashboard');
-          return;
-        }
-      }
+        setStatus(data);
+        setOtpOpen(Boolean(data.promptTrustDevice));
+      } catch (err) {
+        console.error('Security status fetch failed', err);
+        setError(
+          err instanceof Error ? err.message : 'Unable to load verification methods.'
 
-      setStatus(data);
-      setOtpOpen(Boolean(data.requiresVerification || data.promptTrustDevice));
-    } catch (err) {
-      console.error('Security status fetch failed', err);
-      setError(
-        err instanceof Error ? err.message : 'Unable to load verification methods.'
+
+
+
+
+
         );
       } finally {
         setLoading(false);
@@ -159,6 +170,99 @@ export default function VerifyPage() {
 
     fetchStatus();
   }, [router]);
+
+  const handleBiometricVerify = async () => {
+    setActionLoading(true);
+    setError('');
+    track('submit_attempt', { detail: 'Biometric verification started' });
+
+    try {
+      const optionsRes = await fetch(
+        `${API_BASE_URL}/api/security/webauthn/authenticate/options`,
+        {
+          method: 'POST',
+          headers: getAuthHeaders(),
+        }
+      );
+
+      const options = await optionsRes.json();
+
+      if (!optionsRes.ok) {
+        throw new Error(options.error || 'Unable to start biometric verification');
+      }
+
+      const authResponse = await startAuthentication({
+        optionsJSON: options,
+      });
+
+      const verifyRes = await fetch(
+        `${API_BASE_URL}/api/security/webauthn/authenticate/verify`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...getAuthHeaders(),
+          },
+          body: JSON.stringify(authResponse),
+        }
+      );
+
+      const verifyData = await verifyRes.json();
+
+      if (!verifyRes.ok || !verifyData.verified) {
+        throw new Error(verifyData.error || 'Biometric verification failed');
+      }
+
+      router.push('/dashboard');
+    } catch (err) {
+      console.error('Biometric verification failed', err);
+      track('submit_failure', { detail: 'Biometric verification failed' });
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Biometric verification failed on this device.'
+      );
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handlePinVerify = async () => {
+    setActionLoading(true);
+    setError('');
+    track('submit_attempt', { detail: 'PIN verification started' });
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/security/verify-pin`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({ pin }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'PIN verification failed');
+      }
+
+      if (!data.valid) {
+        throw new Error('Incorrect PIN');
+      }
+
+      router.push('/dashboard');
+    } catch (err) {
+      console.error('PIN verification failed', err);
+      track('submit_failure', {
+        detail: err instanceof Error ? err.message : 'PIN verification failed',
+      });
+      setError(err instanceof Error ? err.message : 'PIN verification failed');
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   const handleSendOtp = async () => {
     setTrustingDevice(true);
@@ -205,7 +309,7 @@ export default function VerifyPage() {
           'Content-Type': 'application/json',
           ...getAuthHeaders(),
         },
-        body: JSON.stringify({ otp, pin }),
+        body: JSON.stringify({ otp }),
       });
 
       const data = await res.json();
@@ -218,7 +322,6 @@ export default function VerifyPage() {
         current
           ? {
               ...current,
-              secondFactorVerified: true,
               promptTrustDevice: false,
               currentDevice: current.currentDevice
                 ? { ...current.currentDevice, isTrusted: true }
@@ -228,14 +331,13 @@ export default function VerifyPage() {
       );
       setOtpOpen(false);
       setOtp('');
-      setPin('');
       setOtpStatus('Device trusted successfully.');
-      if (status?.needsSetup) {
-        router.push('/onboarding');
-        return;
-      }
 
-      router.push('/dashboard');
+
+
+
+
+
     } catch (err) {
       track('otp_failure', {
         detail: err instanceof Error ? err.message : 'Unable to verify OTP',
@@ -264,9 +366,9 @@ export default function VerifyPage() {
         <Dialog
           open={otpOpen}
           onOpenChange={(open) => {
-            const mustStayOpen =
-              Boolean(status?.requiresVerification) && !status?.secondFactorVerified;
-            setOtpOpen(mustStayOpen ? true : open);
+            setOtpOpen(open);
+
+
             track(open ? 'dialog_open' : 'dialog_close', {
               detail: 'OTP trust dialog',
             });
@@ -274,12 +376,12 @@ export default function VerifyPage() {
         >
           <DialogContent showCloseButton={false}>
             <DialogHeader>
-              <DialogTitle>Verify Login</DialogTitle>
+              <DialogTitle>Verify New Device</DialogTitle>
               <DialogDescription>
-                Enter your 4-digit PIN and the OTP sent to your email to finish signing in.
-                {status?.promptTrustDevice
-                  ? ' This will also mark the current device as trusted.'
-                  : ''}
+                We detected a new device login. Send an OTP to your email and verify it before
+                trusting this device.
+
+
               </DialogDescription>
             </DialogHeader>
 
@@ -287,23 +389,6 @@ export default function VerifyPage() {
               <Button onClick={handleSendOtp} disabled={trustingDevice} className="w-full">
                 {trustingDevice ? 'Sending OTP...' : 'Send OTP to Email'}
               </Button>
-
-              <Input
-                type="password"
-                inputMode="numeric"
-                maxLength={4}
-                placeholder="Enter 4-digit PIN"
-                value={pin}
-                onChange={(e) => {
-                  const value = e.target.value.replace(/\D/g, '').slice(0, 4);
-                  if (value.length < pin.length) {
-                    track('field_correction', { field: 'pin' });
-                  } else {
-                    track('field_change', { field: 'pin' });
-                  }
-                  setPin(value);
-                }}
-              />
 
               <Input
                 type="text"
@@ -327,9 +412,13 @@ export default function VerifyPage() {
 
             <DialogFooter>
               <Button
-                onClick={handleVerifyOtp}
-                disabled={trustingDevice || pin.length !== 4 || otp.length !== 6}
+                variant="outline"
+                onClick={() => setOtpOpen(false)}
+                disabled={trustingDevice}
               >
+                Later
+              </Button>
+              <Button onClick={handleVerifyOtp} disabled={trustingDevice || otp.length !== 6}>
                 {trustingDevice ? 'Verifying...' : 'Verify OTP'}
               </Button>
             </DialogFooter>
@@ -363,7 +452,7 @@ export default function VerifyPage() {
             </h1>
 
             <p className="text-muted-foreground">
-              PIN and OTP verification are required before continuing to your account
+              Confirm it&apos;s really you before continuing to your account
             </p>
           </div>
 
@@ -374,26 +463,70 @@ export default function VerifyPage() {
           )}
 
           <div className="space-y-4">
-            <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-3">
-              <div>
-                <p className="font-medium text-foreground">Login PIN + OTP required</p>
-                <p className="text-sm text-muted-foreground">
-                  Enter your 4-digit PIN and verify the email OTP to complete this sign-in.
-                  {status?.currentDevice?.deviceName
-                    ? ` Current device: ${status.currentDevice.deviceName}.`
-                    : ''}
-                </p>
+            {status?.promptTrustDevice && !otpOpen && (
+              <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-3">
+                <div>
+                  <p className="font-medium text-foreground">Trust this device?</p>
+                  <p className="text-sm text-muted-foreground">
+                    {status.currentDevice?.deviceName || 'This device'} is new to your account.
+                    Verify it by email OTP before marking it as trusted.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => setOtpOpen(true)}
+                    disabled={trustingDevice}
+                    className="w-full"
+                  >
+                    Open OTP Popup
+                  </Button>
+                </div>
               </div>
-              <div className="flex gap-2">
+            )}
+
+            {status?.hasBiometric && (
+              <Button
+                onClick={handleBiometricVerify}
+                disabled={actionLoading}
+                className="w-full bg-primary hover:bg-primary/90 text-primary-foreground h-11"
+              >
+                <Fingerprint className="mr-2 h-4 w-4" />
+                {actionLoading ? 'Checking device...' : 'Use Device Biometrics'}
+              </Button>
+            )}
+
+            {status?.hasPin && (
+              <div className="space-y-3">
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    type="password"
+                    maxLength={4}
+                    placeholder="Enter your 4-digit PIN"
+                    value={pin}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(/\D/g, '');
+                      if (value.length < pin.length) {
+                        track('field_correction', { field: 'pin' });
+                      } else {
+                        track('field_change', { field: 'pin' });
+                      }
+                      setPin(value);
+                    }}
+                    className="pl-10"
+                  />
+                </div>
+
                 <Button
-                  onClick={() => setOtpOpen(true)}
-                  disabled={trustingDevice}
-                  className="w-full"
+                  variant="outline"
+                  onClick={handlePinVerify}
+                  disabled={actionLoading || pin.length !== 4}
+                  className="w-full h-11"
                 >
-                  Open OTP Verification
+                  Verify with PIN
                 </Button>
               </div>
-            </div>
+            )}
           </div>
         </Card>
       </div>
