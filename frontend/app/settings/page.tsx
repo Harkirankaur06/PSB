@@ -24,10 +24,15 @@ export default function SettingsPage() {
   const [resolveStatus, setResolveStatus] = useState('');
   const [resolveOtpLoading, setResolveOtpLoading] = useState(false);
   const [resolveLoading, setResolveLoading] = useState(false);
+  const overviewSecurityStatus = data?.cyber.securityStatus;
   const recoveryActive =
-    duressActive || status?.accessMode === 'duress' || Boolean(status?.restrictedMode);
+    duressActive ||
+    status?.accessMode === 'duress' ||
+    Boolean(status?.restrictedMode) ||
+    overviewSecurityStatus?.accessMode === 'duress' ||
+    Boolean(overviewSecurityStatus?.restrictedMode);
   const hasDuressPasswordConfigured =
-    status?.hasDuressPassword ?? data?.cyber.securityStatus.hasDuressPassword ?? false;
+    status?.hasDuressPassword ?? overviewSecurityStatus?.hasDuressPassword ?? false;
 
   if (loading) {
     return (
@@ -347,7 +352,10 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div className="mt-4 rounded-xl border border-warning/30 bg-warning/5 p-4">
+          <div
+            className="mt-4 rounded-xl border border-warning/30 bg-warning/5 p-4"
+            data-duress-allow="true"
+          >
             <div className="mb-4">
               <h3 className="font-medium text-foreground">Protected Mode Recovery</h3>
               <p className="text-sm text-muted-foreground">
@@ -389,14 +397,14 @@ export default function SettingsPage() {
               <Button
                 variant="outline"
                 onClick={sendResolveOtp}
-                disabled={!recoveryActive || resolveOtpLoading}
+                disabled={resolveOtpLoading}
                 data-duress-allow="true"
               >
                 {resolveOtpLoading ? 'Sending OTP...' : 'Send OTP'}
               </Button>
               <Button
                 onClick={resolveDuressSession}
-                disabled={!recoveryActive || resolveLoading}
+                disabled={resolveLoading}
                 data-duress-allow="true"
               >
                 {resolveLoading ? 'Restoring access...' : "I'm safe now"}
